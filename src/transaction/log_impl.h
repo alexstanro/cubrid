@@ -962,6 +962,15 @@ struct trantable
 #define TRANTABLE_INITIALIZER \
   {0, 0, 0, 0, 0, 0, NULL, NULL}
 
+typedef enum mvcc_complete_group_state MVCC_COMPLETE_GROUP_STATE;
+enum mvcc_complete_group_state
+{
+  MVCC_COMPLETE_GROUP_DEACTIVATED,
+  MVCC_COMPLETE_GROUP_ACTIVATED
+};
+
+#define MVCC_COMPLETE_GROUP_INITIALIZER {NULL, 0, MVCC_COMPLETE_GROUP_DEACTIVATED}
+
 /*
  * MVCC_TRANS_STATUS keep MVCCIDs status in bit area. Thus bit 0 means active
  * MVCCID bit 1 means committed transaction. This structure keep also lowest
