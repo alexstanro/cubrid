@@ -231,6 +231,32 @@ struct mvcc_snapshot
   bool valid;			/* true, if the snapshot is valid */
 };
 
+typedef enum mvcc_complete_group_item_state MVCC_COMPLETE_GROUP_ITEM_STATE;
+enum mvcc_complete_group_item_state
+{
+  MVCC_GROUP_ITEM_COMPLETE_INITED = 0,	/* MVCCID not completed yet */
+  MVCC_GROUP_ITEM_COMPLETE_IN_PROGRESS = 1,	/* MVCCID completion in progress */
+  MVCC_GROUP_ITEM_COMPLETE_FINISHED = 2	/* MVCCID complete finished */
+};
+
+#define MVCC_COMPLETE_NULL_GROUP_ITEM_POSITION -2
+#define MVCC_COMPLETE_GROUP_ITEM_INVALID_POSITION -1
+#define RESET_MVCC_COMPLETE_GROUP_ITEM(tdes) \
+  do { \
+  ATOMIC_TAS_32 ((int *) (&(tdes)->mvcc_complete_group_item.state), MVCC_GROUP_ITEM_COMPLETE_INITED); \
+  (tdes)->mvcc_complete_group_item.group_position = MVCC_COMPLETE_GROUP_ITEM_INVALID_POSITION; \
+  ATOMIC_TAS_64 (&((tdes)->mvcc_complete_group_item.mvccid), (tdes)->mvccinfo.id);  \
+  } while (0)
+
+
+typedef struct mvcc_complete_group_item_info MVCC_COMPLETE_GROUP_ITEM_INFO;
+typedef struct mvcc_complete_group_item_info
+{
+  MVCCID mvccid;		/* transaction MVCCID */
+  int group_position;		/* the position in group, -1 means that the element is not member of the group */
+  MVCC_COMPLETE_GROUP_ITEM_STATE state;	/* group member state */
+};
+
 /* MVCC INFO - such structure is attached to each active transaction */
 typedef struct mvcc_info MVCC_INFO;
 struct mvcc_info

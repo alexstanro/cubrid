@@ -107,6 +107,7 @@
 
 #define NUM_ASSIGNED_TRAN_INDICES log_Gl.trantable.num_assigned_indices
 #define NUM_TOTAL_TRAN_INDICES log_Gl.trantable.num_total_indices
+#define MVCC_COMPLETE_GROUP_CAPACITY 8
 
 #if !defined(SERVER_MODE)
 #define pthread_mutex_init(a, b)
@@ -133,6 +134,11 @@ static BOOT_CLIENT_CREDENTIAL log_Client_credential = {
   0,				/* connect_order */
   -1				/* process_id */
 };
+
+/* MVCC complete null group item */
+static MVCC_COMPLETE_GROUP_ITEM_INFO mvcc_complete_null_group_item =
+  { MVCCID_NULL, MVCC_COMPLETE_NULL_GROUP_ITEM_POSITION, MVCC_GROUP_ITEM_COMPLETE_INITED };
+static int count_mvcc_group_consumers = 0;
 
 static int logtb_expand_trantable (THREAD_ENTRY * thread_p, int num_new_indices);
 static int logtb_allocate_tran_index (THREAD_ENTRY * thread_p, TRANID trid, TRAN_STATE state,
@@ -1122,6 +1128,10 @@ logtb_initialize_mvcctable (void)
   mvcc_table->transaction_lowest_active_mvccids = NULL;
   mvcc_table->trans_status_history = NULL;
 
+  mvcc_table->complete_group.items = NULL;
+  mvcc_table->complete_group.state = MVCC_COMPLETE_GROUP_DEACTIVATED;
+  mvcc_table->complete_group.capacity = MVCC_COMPLETE_GROUP_CAPACITY;
+
   size = MVCC_BITAREA_ELEMENTS_TO_BYTES (MVCC_BITAREA_MAXIMUM_ELEMENTS);
   current_trans_status->bit_area = (UINT64 *) malloc (size);
   if (current_trans_status->bit_area == NULL)
@@ -1153,6 +1163,21 @@ logtb_initialize_mvcctable (void)
     }
   memset ((void *) mvcc_table->transaction_lowest_active_mvccids, MVCCID_NULL,
 	  NUM_TOTAL_TRAN_INDICES * sizeof (MVCCID));
+
+  size = MVCC_COMPLETE_GROUP_CAPACITY * sizeof (MVCC_COMPLETE_GROUP_ITEM_INFO *);
+  mvcc_table->complete_group.items = (MVCC_COMPLETE_GROUP_ITEM_INFO **) malloc (size);
+  if (mvcc_table->complete_group.items == NULL)
+    {
+      error_code = ER_OUT_OF_VIRTUAL_MEMORY;
+      er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_OUT_OF_VIRTUAL_MEMORY, 1, size);
+      goto exit_on_error;
+    }
+
+  /* Initialize the group with null items. */
+  for (i = 0; i < MVCC_COMPLETE_GROUP_CAPACITY; i++)
+    {
+      mvcc_table->complete_group.items[i] = &mvcc_complete_null_group_item;
+    }
 
   size = TRANS_STATUS_HISTORY_MAX_SIZE * sizeof (MVCC_TRANS_STATUS);
   /* MVCC mvcc_table_queue */
@@ -1225,6 +1250,12 @@ exit_on_error:
       current_trans_status->long_tran_mvccids_length = 0;
     }
 
+  if (mvcc_table->complete_group.items != NULL)
+    {
+      free ((void *) mvcc_table->complete_group.items);
+      mvcc_table->complete_group.items = NULL;
+    }
+
   if (mvcc_table->transaction_lowest_active_mvccids != NULL)
     {
       free ((void *) mvcc_table->transaction_lowest_active_mvccids);
@@ -1284,6 +1315,14 @@ logtb_finalize_mvcctable (THREAD_ENTRY * thread_p)
       free ((void *) current_trans_status->long_tran_mvccids);
       current_trans_status->long_tran_mvccids = NULL;
       current_trans_status->long_tran_mvccids_length = 0;
+    }
+
+  if (mvcc_table->complete_group.items)
+    {
+      free (mvcc_table->complete_group.items);
+      mvcc_table->complete_group.items = NULL;
+      mvcc_table->complete_group.state = MVCC_COMPLETE_GROUP_DEACTIVATED;
+      mvcc_table->complete_group.capacity = 0;
     }
 
   if (mvcc_table->transaction_lowest_active_mvccids)
@@ -4761,6 +4800,81 @@ logtb_get_mvcc_snapshot (THREAD_ENTRY * thread_p)
 
 }
 
+#if defined(SERVER_MODE)
+/*
+ * logtb_wait_for_mvccid_completion () - Wait for MVCCID completion
+ *
+ * return	  : Nothing
+ * tdes (in)	  : Transaction descriptor.
+ *
+ *  Note: This function waits for its MVCCID to be completed. If the current transaction is an MVCC producer, then,
+ *	    its MVCCID is completed by a MVCC consumer. In this case, the producer has to check its MVCCID state in
+ *	    transaction status history.
+ *	  This function must be called before releasing the locks.
+ */
+void
+logtb_wait_for_mvccid_completion (LOG_TDES * tdes)
+{
+  MVCCTABLE *mvcc_table = &log_Gl.mvcc_table;
+  MVCCID position;
+  UINT64 mask;
+  UINT64 *p_area = NULL, bits;
+  int history_position, version;
+  unsigned int long_tran_mvccids_length, i;
+  MVCC_TRANS_STATUS *current_trans_status = NULL;
+  MVCCID mvccid;
+  MVCC_TRANS_STATUS *trans_status = NULL;
+  MVCC_COMPLETE_GROUP_ITEM_INFO *mvcc_current_transaction_complete_group_item = NULL;
+
+  mvcc_current_transaction_complete_group_item = &tdes->mvcc_complete_group_item;
+  if (mvcc_current_transaction_complete_group_item->state != MVCC_GROUP_ITEM_COMPLETE_FINISHED)
+    {
+      mvccid = mvcc_current_transaction_complete_group_item->mvccid;
+    check_complete_mvccid:
+      /* Check the bit corresponding to MVCCID in transaction status. */
+      history_position = ATOMIC_INC_32 (&(mvcc_table->trans_status_history_position), 0);
+      trans_status = &(mvcc_table->trans_status_history[history_position]);
+      version = ATOMIC_INC_32 (&(mvcc_table->trans_status_history[history_position]).version, 0);
+      if (mvccid >= trans_status->bit_area_start_mvccid)
+	{
+	  position = mvccid - ATOMIC_INC_64 (&(trans_status->bit_area_start_mvccid), 0LL);
+	  mask = MVCC_BITAREA_MASK (position);
+	  p_area = MVCC_GET_BITAREA_ELEMENT_PTR (trans_status->bit_area, position);
+	  bits = ATOMIC_INC_64 (p_area, 0LL);
+	  if (ATOMIC_INC_32 (&(trans_status->version), 0) == version)
+	    {
+	      if ((bits & mask) == 0)
+		{
+		  /* Not completed yet, sleep and try again. */
+		  thread_sleep (1);
+		  goto check_complete_mvccid;
+		}
+	    }
+	  else
+	    {
+	      /* Transaction status overwritten, try again. */
+	      goto check_complete_mvccid;
+	    }
+	}
+      else
+	{
+	  /* Long transaction. */
+	  current_trans_status = &(log_Gl.mvcc_table.current_trans_status);
+	  long_tran_mvccids_length = ATOMIC_INC_32 (&(current_trans_status->long_tran_mvccids_length), 0);
+	  for (i = 0; i < long_tran_mvccids_length; i++)
+	    {
+	      if (ATOMIC_INC_64 (&(current_trans_status->long_tran_mvccids[i]), 0)
+		  == mvcc_current_transaction_complete_group_item->mvccid)
+		{
+		  /* Not completed yet, sleep and try again. */
+		  thread_sleep (1);
+		  goto check_complete_mvccid;
+		}
+	    }
+	}
+    }
+}
+#endif /* SERVER_MODE */
 /*
  * logtb_complete_mvcc () - Called at commit or rollback, completes MVCC info
  *			    for current transaction.
@@ -4769,6 +4883,10 @@ logtb_get_mvcc_snapshot (THREAD_ENTRY * thread_p)
  * thread_p (in)  : Thread entry.
  * tdes (in)	  : Transaction descriptor.
  * committed (in) : True if transaction was committed false if it was aborted.
+ *
+ *  Note: This function handle the MVCC group completion also. Thus, the consumers complete all items of the current
+ *	  group. The producers has to wait to be sure that their MVCCIDs will be completed by a consumer. If no such
+ *	  consumer is found, the producer become consumer.
  */
 void
 logtb_complete_mvcc (THREAD_ENTRY * thread_p, LOG_TDES * tdes, bool committed)
@@ -4793,6 +4911,13 @@ logtb_complete_mvcc (THREAD_ENTRY * thread_p, LOG_TDES * tdes, bool committed)
   TSCTIMEVAL tv_diff;
   UINT64 tran_complete_time;
   bool is_perf_tracking = false;
+  int cnt_retry_check_mvcc_completion = 0, max_retry_check_mvcc_completion = 10;
+  MVCC_COMPLETE_GROUP_ITEM_INFO **mvcc_group_items = mvcc_table->complete_group.items;
+  MVCC_COMPLETE_GROUP_ITEM_INFO *mvcc_complete_group_item = NULL;
+  MVCC_COMPLETE_GROUP_INFO *mvcc_complete_group = &mvcc_table->complete_group;
+  int idx, local_count_mvcc_group_consumers;
+  bool curr_tran_mvcc_completed = false;
+  MVCC_COMPLETE_GROUP_ITEM_INFO *mvcc_current_transaction_complete_group_item = NULL;
 
   assert (tdes != NULL);
 
@@ -4812,65 +4937,91 @@ logtb_complete_mvcc (THREAD_ENTRY * thread_p, LOG_TDES * tdes, bool committed)
   if (MVCCID_IS_VALID (mvccid))
     {
       current_trans_status = &log_Gl.mvcc_table.current_trans_status;
+      curr_tran_mvcc_completed = false;
 
-#if defined(HAVE_ATOMIC_BUILTINS)
-      bit_area_start_mvccid = ATOMIC_INC_64 (&current_trans_status->bit_area_start_mvccid, 0LL);
-#else
-      /* Transaction completed - set corresponding bit to 1 */
-      r = pthread_mutex_lock (&mvcc_table->active_trans_mutex);
-      bit_area_start_mvccid = current_trans_status->bit_area_start_mvccid;
-      bit_area_length = current_trans_status->bit_area_length;
-#endif
-
-      /* check whether is long transaction */
-      if (MVCC_ID_PRECEDES (mvccid, bit_area_start_mvccid))
+      if (committed && mht_count (tdes->log_upd_stats.unique_stats_hash) > 0)
 	{
-#if defined(HAVE_ATOMIC_BUILTINS)
-	  /* called rarely - current transaction is a long transaction */
-	  r = pthread_mutex_lock (&mvcc_table->active_trans_mutex);
-
-	  next_history_position = (mvcc_table->trans_status_history_position + 1) & trans_status_history_last_position;
-	  next_trans_status_history = &mvcc_table->trans_status_history[next_history_position];
-
-	  ATOMIC_INC_32 (&current_trans_status->version, 1);
-	  ATOMIC_TAS_32 (&next_trans_status_history->version, current_trans_status->version);
-	  bit_area_start_mvccid = ATOMIC_INC_64 (&current_trans_status->bit_area_start_mvccid, 0LL);
-#endif
-
-	complete_long_transactions:
-#if defined(HAVE_ATOMIC_BUILTINS)
-	  bit_area_length = ATOMIC_INC_32 (&current_trans_status->bit_area_length, 0);
-#endif
-
-	  /* reflect accumulated statistics to B-trees */
-	  if (committed && logtb_tran_update_all_global_unique_stats (thread_p) != NO_ERROR)
-	    {
-	      assert (false);
-	    }
-
-	  /* Safe guard: */
-	  assert (current_trans_status->long_tran_mvccids_length > 0);
-	  /* remove MVCCID from mvcc_table->long_tran_mvccids array */
-	  for (i = 0; i < current_trans_status->long_tran_mvccids_length - 1; i++)
-	    {
-	      if (current_trans_status->long_tran_mvccids[i] == mvccid)
-		{
-		  size = MVCC_BITAREA_ELEMENTS_TO_BYTES (current_trans_status->long_tran_mvccids_length - i - 1);
-		  memmove ((void *) (current_trans_status->long_tran_mvccids + i),
-			   (void *) (current_trans_status->long_tran_mvccids + i + 1), size);
-		  break;
-		}
-	    }
-	  assert ((i < (current_trans_status->long_tran_mvccids_length - 1))
-		  || (current_trans_status->long_tran_mvccids[i] == mvccid));
-	  current_trans_status->long_tran_mvccids_length--;
-
-	  goto end_completed;
+	  logtb_tran_update_all_global_unique_stats (thread_p);
 	}
 
 #if defined(HAVE_ATOMIC_BUILTINS)
-      /* Transaction completed - set corresponding bit to 1 */
+#if defined(SERVER_MODE)
+      mvcc_current_transaction_complete_group_item = &tdes->mvcc_complete_group_item;
+      if (mvcc_current_transaction_complete_group_item->group_position != MVCC_COMPLETE_GROUP_ITEM_INVALID_POSITION)
+	{
+	  /*
+	   *   So far, the current transaction is a producer. Check whether a consumer has completed or will complete
+	   * the producer MVCCID, as follow:
+	   *     - if mvcc_complete_group.state == MVCC_COMPLETE_GROUP_ACTIVATED, a consumer started MVCC completion
+	   *  and follows to complete MVCCID of all group items. Since current transaction item is part of the group,
+	   *  its MVCCID will be completed by the consumer.
+	   *    - if mvcc_complete_group_item.state == MVCC_GROUP_ITEM_COMPLETE_IN_PROGRESS, the MVCCID completion
+	   *  of the group item belonging to the curent transaction is in progress.
+	   *    - if count_mvcc_group_consumers > 1, there are at least 2 consumers that complete the group. Only one
+	   *  consumer can complete the group once (the consumer that acquired active_trans_mutex). The current
+	   *  transaction MVCCID can be completed by the transaction that hold active transaction mutex. Otherwise,
+	   *  definitely will be completed by the next consumer since every consumer completes all group items.
+	   */
+	check_mvcc_completion:
+	  if ((ATOMIC_INC_32 ((int volatile *) &mvcc_complete_group->state, 0) == MVCC_COMPLETE_GROUP_ACTIVATED)
+	      || (ATOMIC_INC_32 ((int volatile *) &mvcc_current_transaction_complete_group_item->state, 0)
+		  >= MVCC_GROUP_ITEM_COMPLETE_IN_PROGRESS)
+	      || ((local_count_mvcc_group_consumers = ATOMIC_INC_32 (&count_mvcc_group_consumers, 0)) > 1))
+	    {
+	      if ((*p_transaction_lowest_active_mvccid == MVCCID_NULL)
+		  || MVCC_ID_PRECEDES (*p_transaction_lowest_active_mvccid, mvccid))
+		{
+		  ATOMIC_TAS_64 (p_transaction_lowest_active_mvccid, mvccid);
+		}
+
+	      goto end;
+	    }
+
+	  if (local_count_mvcc_group_consumers == 1)
+	    {
+	      /* Still have a chance to be completed by the consumer. */
+	      cnt_retry_check_mvcc_completion++;
+	      if (cnt_retry_check_mvcc_completion < max_retry_check_mvcc_completion)
+		{
+		  thread_sleep (1);
+		  goto check_mvcc_completion;
+		}
+	    }
+
+	  /* Nobody can process the group items. The current transaction becomes consumer. */
+	  ATOMIC_INC_32 (&count_mvcc_group_consumers, 1);
+	  r = pthread_mutex_lock (&mvcc_table->active_trans_mutex);
+	  if (ATOMIC_INC_32 ((int volatile *) &mvcc_current_transaction_complete_group_item->state, 0)
+	      >= MVCC_GROUP_ITEM_COMPLETE_IN_PROGRESS)
+	    {
+	      /* 
+	       * While waiting for active_trans_mutex, a consumer processed the group item belonging to
+	       * the current transaction. However, the current transaction can complete the next group.
+	       */
+	      curr_tran_mvcc_completed = true;
+	    }
+	  else
+	    {
+	      /* Remove from group the item belonging to current transaction. */
+	      ATOMIC_TAS_64 ((UINT64 volatile *)
+			     (&mvcc_group_items[mvcc_current_transaction_complete_group_item->group_position]),
+			     (UINT64) & mvcc_complete_null_group_item);
+
+	    }
+
+	  goto start_new_version;
+	}
+#endif /* SERVER_MODE */
+
       r = pthread_mutex_lock (&mvcc_table->active_trans_mutex);
+
+    start_new_version:
+
+      /*
+       * Activate the group to allow to the other transactions to detect faster whether theirs group items will be
+       * completed by the current transaction.
+       */
+      ATOMIC_TAS_32 ((int *) &(mvcc_complete_group->state), MVCC_COMPLETE_GROUP_ACTIVATED);
 
       /* set version to last MVCC table in queue - need to detect snapshots */
       next_history_position = (mvcc_table->trans_status_history_position + 1) & trans_status_history_last_position;
@@ -4879,26 +5030,87 @@ logtb_complete_mvcc (THREAD_ENTRY * thread_p, LOG_TDES * tdes, bool committed)
       ATOMIC_INC_32 (&current_trans_status->version, 1);
       ATOMIC_TAS_32 (&next_trans_status_history->version, current_trans_status->version);
       bit_area_start_mvccid = ATOMIC_INC_64 (&current_trans_status->bit_area_start_mvccid, 0LL);
-#endif
+#endif /* HAVE_ATOMIC_BUILTINS */
 
-
-      /* check again whether is long transaction */
-      if (MVCC_ID_PRECEDES (mvccid, bit_area_start_mvccid))
+      /*
+       * The current transaction is a group consumer. First, the current transaction completes its MVCC. Then,
+       * completes the MVCC of the other transactions (if any) from group.
+       */
+      if (curr_tran_mvcc_completed == false)
 	{
-	  goto complete_long_transactions;
+	  /* Check whether is long transaction. */
+	  if (MVCC_ID_FOLLOW_OR_EQUAL (mvccid, bit_area_start_mvccid))
+	    {
+	      /* Complete the current transaction */
+	      position = mvccid - bit_area_start_mvccid;
+	      mask = MVCC_BITAREA_MASK (position);
+	      p_area = MVCC_GET_BITAREA_ELEMENT_PTR (current_trans_status->bit_area, position);
+	      (*p_area) |= mask;
+	    }
+	  else
+	    {
+	      /* Remove MVCCID from mvcc_table->long_tran_mvccids array. */
+	      for (i = 0; i < current_trans_status->long_tran_mvccids_length - 1; i++)
+		{
+		  if (current_trans_status->long_tran_mvccids[i] == mvccid)
+		    {
+		      size = MVCC_BITAREA_ELEMENTS_TO_BYTES (current_trans_status->long_tran_mvccids_length - i - 1);
+		      memmove ((void *) (current_trans_status->long_tran_mvccids + i),
+			       (void *) (current_trans_status->long_tran_mvccids + i + 1), size);
+		      break;
+		    }
+		}
+	      assert ((i < (current_trans_status->long_tran_mvccids_length - 1))
+		      || (current_trans_status->long_tran_mvccids[i] == mvccid));
+	      current_trans_status->long_tran_mvccids_length--;
+	    }
 	}
 
-      /* reflect accumulated statistics to B-trees */
-      if (committed && logtb_tran_update_all_global_unique_stats (thread_p) != NO_ERROR)
+#if defined(SERVER_MODE)
+      /* Deactivate the group and completes the group items. */
+      ATOMIC_TAS_32 ((int *) &mvcc_complete_group->state, MVCC_COMPLETE_GROUP_DEACTIVATED);
+      for (idx = 0; idx < mvcc_complete_group->capacity; idx++)
 	{
-	  assert (false);
-	}
+	  mvcc_complete_group_item =
+	    (MVCC_COMPLETE_GROUP_ITEM_INFO *) ATOMIC_INC_64 ((UINT64 volatile *) (&mvcc_group_items[idx]), 0);
+	  if (MVCC_ID_FOLLOW_OR_EQUAL (mvcc_complete_group_item->mvccid, bit_area_start_mvccid))
+	    {
+	      assert (mvcc_complete_group_item != &mvcc_complete_null_group_item);
+	      assert (mvcc_complete_group_item->group_position >= 0);
 
-      /* Complete the current transaction */
-      position = mvccid - bit_area_start_mvccid;
-      mask = MVCC_BITAREA_MASK (position);
-      p_area = MVCC_GET_BITAREA_ELEMENT_PTR (current_trans_status->bit_area, position);
-      (*p_area) |= mask;
+	      /* Sets the group item state to allow to producers to advance. */
+	      ATOMIC_TAS_32 ((int volatile *) &mvcc_complete_group_item->state, MVCC_GROUP_ITEM_COMPLETE_IN_PROGRESS);
+
+	      /* Completes the MVCCID of the item. */
+	      position = mvcc_complete_group_item->mvccid - bit_area_start_mvccid;
+	      mask = MVCC_BITAREA_MASK (position);
+	      p_area = MVCC_GET_BITAREA_ELEMENT_PTR (current_trans_status->bit_area, position);
+	      (*p_area) |= mask;
+
+	      /* Remove the item from group. */
+	      ATOMIC_TAS_64 ((UINT64 volatile *) (&mvcc_group_items[idx]), (UINT64) & mvcc_complete_null_group_item);
+	    }
+	  else if (MVCC_ID_FOLLOW_OR_EQUAL (mvcc_complete_group_item->mvccid, MVCCID_FIRST))
+	    {
+	      /* Remove MVCCID from mvcc_table->long_tran_mvccids array. */
+	      for (i = 0; i < current_trans_status->long_tran_mvccids_length - 1; i++)
+		{
+		  if (current_trans_status->long_tran_mvccids[i] == mvcc_complete_group_item->mvccid)
+		    {
+		      size = MVCC_BITAREA_ELEMENTS_TO_BYTES (current_trans_status->long_tran_mvccids_length - i - 1);
+		      memmove ((void *) (current_trans_status->long_tran_mvccids + i),
+			       (void *) (current_trans_status->long_tran_mvccids + i + 1), size);
+		      break;
+		    }
+		}
+	      assert ((i < (current_trans_status->long_tran_mvccids_length - 1))
+		      || (current_trans_status->long_tran_mvccids[i] == mvcc_complete_group_item->mvccid));
+	      current_trans_status->long_tran_mvccids_length--;
+	    }
+	}
+      /* Decrease the group consumers. */
+      ATOMIC_INC_32 (&count_mvcc_group_consumers, -1);
+#endif /* SERVER_MODE */
 
 #if defined(HAVE_ATOMIC_BUILTINS)
       bit_area_length = ATOMIC_INC_32 (&current_trans_status->bit_area_length, 0);
@@ -4956,8 +5168,10 @@ logtb_complete_mvcc (THREAD_ENTRY * thread_p, LOG_TDES * tdes, bool committed)
 	      delete_bytes_count);
       size = MVCC_BITAREA_ELEMENTS_TO_BITS (delete_dwords_count);
 #if defined(HAVE_ATOMIC_BUILTINS)
-      bit_area_start_mvccid = ATOMIC_INC_64 (&current_trans_status->bit_area_start_mvccid, size);
-      bit_area_length = ATOMIC_INC_32 (&current_trans_status->bit_area_length, -size);
+      ATOMIC_INC_64 (&current_trans_status->bit_area_start_mvccid, size);
+      bit_area_start_mvccid = current_trans_status->bit_area_start_mvccid;
+      ATOMIC_INC_32 (&current_trans_status->bit_area_length, -size);
+      bit_area_length = current_trans_status->bit_area_length;
 #else
       current_trans_status->bit_area_start_mvccid += size;
       current_trans_status->bit_area_length -= size;
@@ -5057,6 +5271,7 @@ logtb_complete_mvcc (THREAD_ENTRY * thread_p, LOG_TDES * tdes, bool committed)
 
       if (committed)
 	{
+	  mvccid = curr_mvcc_info->id;
 	  /* be sure that transaction modifications can't be vacuumed up to LOG_COMMIT. Otherwise, the following
 	   * scenario will corrupt the database: - transaction set its lowest_active_mvccid to MVCCID_NULL - VACUUM
 	   * clean up transaction modifications - the system crash before LOG_COMMIT of current transaction */
@@ -5077,6 +5292,8 @@ logtb_complete_mvcc (THREAD_ENTRY * thread_p, LOG_TDES * tdes, bool committed)
 #endif
 
       pthread_mutex_unlock (&mvcc_table->active_trans_mutex);
+      /* Set the group item state as finished to avoid transaction status checking. */
+      ATOMIC_TAS_32 ((int volatile *) &tdes->mvcc_complete_group_item.state, MVCC_GROUP_ITEM_COMPLETE_FINISHED);
     }
   else
     {
@@ -5130,6 +5347,7 @@ logtb_complete_mvcc (THREAD_ENTRY * thread_p, LOG_TDES * tdes, bool committed)
 #endif
     }
 
+end:
   curr_mvcc_info->recent_snapshot_lowest_active_mvccid = MVCCID_NULL;
 
   p_mvcc_snapshot = &(curr_mvcc_info->snapshot);
@@ -7308,3 +7526,61 @@ tran_abort_reason_to_string (TRAN_ABORT_REASON val)
     }
   return "UNKNOWN";
 }
+
+#if defined(SERVER_MODE)
+/*
+ * logtb_start_mvcc_complete_grouping() - start complete grouping
+ *
+ *   return: nothing
+ *
+ *   tdes(in): transaction descriptor
+ *
+ * Note:  This function decides the MVCC grouping type for current transaction. Thus, in case of valid MVCCID, a
+ *	transaction may be MVCC group consumer or MVCC group producer. The MVCC group consumer has the responsibility to
+ *      complete MVCCIDs of all group items. The MVCC group producer adds its item to group and waits for consumer to
+ *	completes the item. The consumer that acquire active_trans_mutex will complete MVCCIDs of all group items.
+ */
+void
+logtb_start_mvcc_complete_grouping (LOG_TDES * tdes)
+{
+  MVCCTABLE *mvcc_table = NULL;
+  MVCC_COMPLETE_GROUP_ITEM_INFO **mvcc_group_items = NULL, *mvcc_current_transaction_complete_group_item = NULL;
+  int idx, mvcc_group_capcity;
+
+  if ((MVCCID_IS_VALID (tdes->mvccinfo.id)))
+    {
+      mvcc_current_transaction_complete_group_item = &tdes->mvcc_complete_group_item;
+      mvcc_current_transaction_complete_group_item->group_position = MVCC_COMPLETE_GROUP_ITEM_INVALID_POSITION;
+      if (ATOMIC_INC_32 (&count_mvcc_group_consumers, 0) == 0)
+	{
+	  /* The current transaction is a group consumer. Increase the number of consumers. */
+	  ATOMIC_INC_32 (&count_mvcc_group_consumers, 1);
+	}
+      else
+	{
+	  mvcc_table = &log_Gl.mvcc_table;
+	  mvcc_group_items = mvcc_table->complete_group.items;
+	  mvcc_group_capcity = mvcc_table->complete_group.capacity;
+	  for (idx = 0; idx < mvcc_group_capcity; idx++)
+	    {
+	      if (ATOMIC_CAS_64 ((UINT64 volatile *) (&mvcc_group_items[idx]), (UINT64) & mvcc_complete_null_group_item,
+				 (UINT64) mvcc_current_transaction_complete_group_item))
+		{
+		  /*
+		   * The current transaction is a group producer. Now, the group contains the item belonging to the
+		   * current transaction.
+		   */
+		  mvcc_current_transaction_complete_group_item->group_position = idx;
+		  break;
+		}
+	    }
+
+	  if (mvcc_current_transaction_complete_group_item->group_position == MVCC_COMPLETE_GROUP_ITEM_INVALID_POSITION)
+	    {
+	      /* The current transaction is a group consumer. That's because there is no free slot on group. */
+	      ATOMIC_INC_32 (&count_mvcc_group_consumers, 1);
+	    }
+	}
+    }
+}
+#endif /* SERVER_MODE */

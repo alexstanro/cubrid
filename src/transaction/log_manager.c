@@ -5291,6 +5291,11 @@ RB_GENERATE_STATIC (lob_rb_root, lob_locator_entry, head, lob_locator_cmp);
 TRAN_STATE
 log_commit_local (THREAD_ENTRY * thread_p, LOG_TDES * tdes, bool retain_lock, bool is_local_tran)
 {
+  RESET_MVCC_COMPLETE_GROUP_ITEM (tdes);
+#if defined(SERVER_MODE)
+  logtb_start_mvcc_complete_grouping (tdes);
+#endif
+
   if (tdes->num_pinned_xasl_cache_entries > 0)
     {
       qexec_clear_my_leaked_pinned_xasl_cache_entries (thread_p);
@@ -5366,7 +5371,17 @@ log_commit_local (THREAD_ENTRY * thread_p, LOG_TDES * tdes, bool retain_lock, bo
 	  else
 	    {
 	      log_append_commit_log (thread_p, tdes, &commit_lsa);
+#if defined(SERVER_MODE)
+	      if (!prm_get_bool_value (PRM_ID_LOG_ASYNC_COMMIT) && !LOG_IS_GROUP_COMMIT_ACTIVE ())
+		{
+		  thread_wakeup_log_flush_thread ();
+		}
+#endif
 	    }
+
+#if defined(SERVER_MODE)
+	  logtb_wait_for_mvccid_completion (tdes);
+#endif
 
 	  if (retain_lock != true)
 	    {
@@ -5429,6 +5444,11 @@ log_commit_local (THREAD_ENTRY * thread_p, LOG_TDES * tdes, bool retain_lock, bo
 TRAN_STATE
 log_abort_local (THREAD_ENTRY * thread_p, LOG_TDES * tdes, bool is_local_tran)
 {
+  RESET_MVCC_COMPLETE_GROUP_ITEM (tdes);
+#if defined(SERVER_MODE)
+  logtb_start_mvcc_complete_grouping (tdes);
+#endif
+
   if (tdes->num_pinned_xasl_cache_entries > 0)
     {
       qexec_clear_my_leaked_pinned_xasl_cache_entries (thread_p);
@@ -5473,6 +5493,9 @@ log_abort_local (THREAD_ENTRY * thread_p, LOG_TDES * tdes, bool is_local_tran)
       /* clear mvccid before releasing the locks */
       logtb_complete_mvcc (thread_p, tdes, false);
 
+#if defined(SERVER_MODE)
+      logtb_wait_for_mvccid_completion (tdes);
+#endif
       /* It is safe to release locks here, since we already completed abort. */
       lock_unlock_all (thread_p);
     }

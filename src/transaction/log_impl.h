@@ -929,6 +929,9 @@ struct log_tdes
   bool has_deadlock_priority;
 
   bool block_global_oldest_active_until_commit;
+
+  /* Transaction item for MVCC complete group. */
+  MVCC_COMPLETE_GROUP_ITEM_INFO mvcc_complete_group_item;
 };
 
 typedef struct log_addr_tdesarea LOG_ADDR_TDESAREA;
@@ -962,11 +965,21 @@ struct trantable
 #define TRANTABLE_INITIALIZER \
   {0, 0, 0, 0, 0, 0, NULL, NULL}
 
+/* MVCC complete group state enum */
 typedef enum mvcc_complete_group_state MVCC_COMPLETE_GROUP_STATE;
 enum mvcc_complete_group_state
 {
-  MVCC_COMPLETE_GROUP_DEACTIVATED,
-  MVCC_COMPLETE_GROUP_ACTIVATED
+  MVCC_COMPLETE_GROUP_DEACTIVATED,	/* The group is deactivated. */
+  MVCC_COMPLETE_GROUP_ACTIVATED	/* The group is activated. */
+};
+
+/* MVCC complete group information structure */
+typedef struct mvcc_complete_group_info MVCC_COMPLETE_GROUP_INFO;
+typedef struct mvcc_complete_group_info
+{
+  MVCC_COMPLETE_GROUP_ITEM_INFO **items;	/* MVCC group items */
+  int capacity;			/* MVCC group capacity */
+  MVCC_COMPLETE_GROUP_STATE state;	/* MVCC group state */
 };
 
 #define MVCC_COMPLETE_GROUP_INITIALIZER {NULL, 0, MVCC_COMPLETE_GROUP_DEACTIVATED}
@@ -1003,6 +1016,9 @@ struct mvcctable
   /* current transaction status */
   MVCC_TRANS_STATUS current_trans_status;
 
+  /* MVCC complete group information */
+  MVCC_COMPLETE_GROUP_INFO complete_group;
+
   /* lowest active MVCCIDs - array of size NUM_TOTAL_TRAN_INDICES */
   volatile MVCCID *transaction_lowest_active_mvccids;
 
@@ -1022,11 +1038,11 @@ struct mvcctable
 
 #if defined(HAVE_ATOMIC_BUILTINS)
 #define MVCCTABLE_INITIALIZER \
-  {MVCC_STATUS_INITIALIZER, NULL, NULL, 0, PTHREAD_MUTEX_INITIALIZER,	\
+  {MVCC_STATUS_INITIALIZER, MVCC_COMPLETE_GROUP_INITIALIZER, NULL, NULL, 0, PTHREAD_MUTEX_INITIALIZER,	\
    PTHREAD_MUTEX_INITIALIZER}
 #else
 #define MVCCTABLE_INITIALIZER \
-  {MVCC_STATUS_INITIALIZER, NULL, NULL, 0, PTHREAD_MUTEX_INITIALIZER}
+  {MVCC_STATUS_INITIALIZER, MVCC_COMPLETE_GROUP_INITIALIZER, NULL, NULL, 0, PTHREAD_MUTEX_INITIALIZER}
 #endif
 
 /*
@@ -2223,7 +2239,9 @@ extern bool logtb_is_current_mvccid (THREAD_ENTRY * thread_p, MVCCID mvccid);
 extern bool logtb_is_mvccid_committed (THREAD_ENTRY * thread_p, MVCCID mvccid);
 extern MVCC_SNAPSHOT *logtb_get_mvcc_snapshot (THREAD_ENTRY * thread_p);
 extern void logtb_complete_mvcc (THREAD_ENTRY * thread_p, LOG_TDES * tdes, bool committed);
-
+#if defined(SERVER_MODE)
+extern void logtb_wait_for_mvccid_completion (LOG_TDES * tdes);
+#endif
 extern LOG_TRAN_CLASS_COS *logtb_tran_find_class_cos (THREAD_ENTRY * thread_p, const OID * class_oid, bool create);
 extern int logtb_tran_update_unique_stats (THREAD_ENTRY * thread_p, BTID * btid, int n_keys, int n_oids, int n_nulls,
 					   bool write_to_log);
@@ -2264,5 +2282,9 @@ extern void log_set_db_restore_time (THREAD_ENTRY * thread_p, INT64 db_restore_t
 #if !defined (NDEBUG)
 extern int logtb_collect_local_clients (int **local_client_pids);
 #endif /* !NDEBUG */
+
+#if defined(SERVER_MODE)
+extern void logtb_start_mvcc_complete_grouping (LOG_TDES * tdes);
+#endif
 
 #endif /* _LOG_IMPL_H_ */
