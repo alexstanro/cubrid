@@ -1147,9 +1147,7 @@ extern XASL_CACHE_ENTRY *qexec_check_xasl_cache_ent_by_xasl (THREAD_ENTRY * thre
 							     bool is_pinned_reference);
 extern XASL_CACHE_ENTRY *qexec_check_filter_pred_cache_ent_by_xasl (THREAD_ENTRY * thread_p, const XASL_ID * xasl_id,
 								    int dbval_cnt, XASL_CACHE_CLONE ** clop);
-#if defined (ENABLE_UNUSED_FUNCTION)
-extern int qexec_free_xasl_cache_clo (XASL_CACHE_CLONE * clo);
-#endif /* ENABLE_UNUSED_FUNCTION */
+extern int qexec_free_xasl_cache_clo (THREAD_ENTRY * thread_p, XASL_CACHE_CLONE * clo);
 extern int qexec_free_filter_pred_cache_clo (THREAD_ENTRY * thread_p, XASL_CACHE_CLONE * clo);
 extern int xasl_id_hash_cmpeq (const void *key1, const void *key2);
 extern int qexec_remove_xasl_cache_ent_by_class (THREAD_ENTRY * thread_p, const OID * class_oid, int force_remove);

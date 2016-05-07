@@ -538,7 +538,6 @@ static XASL_CACHE_ENT_INFO filter_pred_ent_cache = {
 #endif
 };
 
-#if defined (ENABLE_UNUSED_FUNCTION)
 /* XASL clone cache and related information */
 static XASL_CACHE_CLO_INFO xasl_clo_cache = {
   0,				/* max_clones */
@@ -553,7 +552,6 @@ static XASL_CACHE_CLO_INFO xasl_clo_cache = {
   0,				/* n_alloc */
   NULL				/* alloc_arr */
 };
-#endif /* ENABLE_UNUSED_FUNCTION */
 
 static XASL_CACHE_CLO_INFO filter_pred_clo_cache = {
   0,				/* max_clones */
@@ -850,12 +848,10 @@ static int tranid_compare (const void *t1, const void *t2);	/* TODO: put to head
 static unsigned int xasl_id_hash (const void *key, unsigned int htsize);
 static int qexec_print_xasl_cache_ent (FILE * fp, const void *key, void *data, void *args);
 static XASL_CACHE_ENTRY *qexec_alloc_xasl_cache_ent (int req_size);
-#if defined (ENABLE_UNUSED_FUNCTION)
 static XASL_CACHE_CLONE *qexec_expand_xasl_cache_clo_arr (int n_exp);
 static XASL_CACHE_CLONE *qexec_alloc_xasl_cache_clo (XASL_CACHE_ENTRY * ent);
-static int qexec_append_LRU_xasl_cache_clo (XASL_CACHE_CLONE * clo);
+static int qexec_append_LRU_xasl_cache_clo (THREAD_ENTRY * thread_p, XASL_CACHE_CLONE * clo);
 static int qexec_delete_LRU_xasl_cache_clo (XASL_CACHE_CLONE * clo);
-#endif
 static XASL_CACHE_ENTRY *qexec_alloc_filter_pred_cache_ent (int req_size);
 static XASL_CACHE_CLONE *qexec_expand_filter_pred_cache_clo_arr (int n_exp);
 static XASL_CACHE_CLONE *qexec_alloc_filter_pred_cache_clo (XASL_CACHE_ENTRY * ent);
@@ -14644,7 +14640,6 @@ qexec_initialize_xasl_cache (THREAD_ENTRY * thread_p)
     }
   mnt_pc_class_oid_hash_entries (thread_p, 0);
 
-#if defined (ENABLE_UNUSED_FUNCTION)
   /* init cache clone info */
   xasl_clo_cache.max_clones = prm_get_integer_value (PRM_ID_XASL_MAX_PLAN_CACHE_CLONES);
   xasl_clo_cache.num = 0;
@@ -14673,7 +14668,6 @@ qexec_initialize_xasl_cache (THREAD_ENTRY * thread_p)
 	  xasl_clo_cache.max_clones = 0;
 	}
     }
-#endif /* ENABLE_UNUSED_FUNCTION */
 
   /* XASL cache entry pool */
   if (xasl_cache_entry_pool.pool)
@@ -14716,9 +14710,7 @@ int
 qexec_finalize_xasl_cache (THREAD_ENTRY * thread_p)
 {
   int ret = NO_ERROR;
-#if defined (ENABLE_UNUSED_FUNCTION)
   int i;
-#endif /* ENABLE_UNUSED_FUNCTION */
 
   if (xasl_ent_cache.max_entries <= 0)
     {
@@ -14755,7 +14747,6 @@ qexec_finalize_xasl_cache (THREAD_ENTRY * thread_p)
     }
   mnt_pc_class_oid_hash_entries (thread_p, 0);
 
-#if defined (ENABLE_UNUSED_FUNCTION)
   /* free all cache clone and XASL tree */
   if (xasl_clo_cache.head)
     {
@@ -14768,7 +14759,7 @@ qexec_finalize_xasl_cache (THREAD_ENTRY * thread_p)
 	  (void) qexec_delete_LRU_xasl_cache_clo (clo);
 
 	  /* add clone to free_list */
-	  ret = qexec_free_xasl_cache_clo (clo);
+	  ret = qexec_free_xasl_cache_clo (thread_p, clo);
 	}			/* while */
     }
 
@@ -14780,7 +14771,6 @@ qexec_finalize_xasl_cache (THREAD_ENTRY * thread_p)
 
   xasl_clo_cache.n_alloc = 0;
   xasl_clo_cache.max_clones = 0;
-#endif /* ENABLE_UNUSED_FUNCTION */
 
   /* XASL cache entry pool */
   if (xasl_cache_entry_pool.pool)
@@ -15108,7 +15098,6 @@ qexec_alloc_xasl_cache_ent (int req_size)
     }
 }
 
-#if defined (ENABLE_UNUSED_FUNCTION)
 /*
  * qexec_expand_xasl_cache_clo_arr () - Expand alloced clone array
  *   return:
@@ -15238,17 +15227,21 @@ qexec_alloc_xasl_cache_clo (XASL_CACHE_ENTRY * ent)
  *   cache_clone_p(in)    :
  */
 int
-qexec_free_xasl_cache_clo (XASL_CACHE_CLONE * clo)
+qexec_free_xasl_cache_clo (THREAD_ENTRY * thread_p, XASL_CACHE_CLONE * clo)
 {
+  HL_HEAPID save_heapid;
   if (!clo)
     {
       return ER_FAILED;
     }
 
+  save_heapid = db_change_private_heap (thread_p, 0);
   /* free XASL tree */
   stx_free_additional_buff (thread_p, clo->xasl_buf_info);
   stx_free_xasl_unpack_info (clo->xasl_buf_info);
   db_private_free_and_init (thread_p, clo->xasl_buf_info);
+
+  (void) db_change_private_heap (thread_p, save_heapid);
 
   /* initialize */
   QEXEC_INITIALIZE_XASL_CACHE_CLO (clo, NULL);
@@ -15266,7 +15259,7 @@ qexec_free_xasl_cache_clo (XASL_CACHE_CLONE * clo)
  *   cache_clone_p(in)    :
  */
 static int
-qexec_append_LRU_xasl_cache_clo (XASL_CACHE_CLONE * clo)
+qexec_append_LRU_xasl_cache_clo (THREAD_ENTRY * thread_p, XASL_CACHE_CLONE * clo)
 {
   int ret = NO_ERROR;
 
@@ -15321,7 +15314,7 @@ qexec_append_LRU_xasl_cache_clo (XASL_CACHE_CLONE * clo)
       (void) qexec_delete_LRU_xasl_cache_clo (del);
 
       /* add clone to free_list */
-      ret = qexec_free_xasl_cache_clo (del);
+      ret = qexec_free_xasl_cache_clo (thread_p, del);
     }
 
   clo->LRU_prev = clo->LRU_next = NULL;	/* init */
@@ -15381,7 +15374,6 @@ qexec_delete_LRU_xasl_cache_clo (XASL_CACHE_CLONE * clo)
 
   return NO_ERROR;
 }
-#endif /* ENABLE_UNUSED_FUNCTION */
 
 /*
  * qexec_free_xasl_cache_ent () - Remove the entry from the hash and free it
@@ -15403,7 +15395,6 @@ qexec_free_xasl_cache_ent (THREAD_ENTRY * thread_p, void *data, void *args)
       return ER_FAILED;
     }
 
-#if defined (ENABLE_UNUSED_FUNCTION)
   /* add clones to free_list */
   if (ent->clo_list)
     {
@@ -15419,10 +15410,9 @@ qexec_free_xasl_cache_ent (THREAD_ENTRY * thread_p, void *data, void *args)
 	      (void) qexec_delete_LRU_xasl_cache_clo (clo);
 	    }
 	  /* add clone to free_list */
-	  ret = qexec_free_xasl_cache_clo (clo);
+	  ret = qexec_free_xasl_cache_clo (thread_p, clo);
 	}			/* for (cache_clone_p = ent->clo_list; ...) */
     }
-#endif /* ENABLE_UNUSED_FUNCTION */
 
   /* if this entry is from the pool return it, else free it */
   pent = POOLED_XASL_CACHE_ENTRY_FROM_XASL_CACHE_ENTRY (ent);
@@ -16219,9 +16209,7 @@ qexec_check_xasl_cache_ent_by_xasl (THREAD_ENTRY * thread_p, const XASL_ID * xas
 				    XASL_CACHE_CLONE ** clop, bool is_pinned_reference)
 {
   XASL_CACHE_ENTRY *ent;
-#if defined (ENABLE_UNUSED_FUNCTION)
   XASL_CACHE_CLONE *clo;
-#endif /* ENABLE_UNUSED_FUNCTION */
 
   if (xasl_ent_cache.max_entries <= 0)
     {
@@ -16264,7 +16252,7 @@ qexec_check_xasl_cache_ent_by_xasl (THREAD_ENTRY * thread_p, const XASL_ID * xas
 	}
 
 #if defined(SERVER_MODE)
-      if (ent)
+      if (ent && (clop == NULL || *clop == NULL))
 	{
 	  int tran_index = LOG_FIND_THREAD_TRAN_INDEX (thread_p);
 
@@ -16302,7 +16290,6 @@ qexec_check_xasl_cache_ent_by_xasl (THREAD_ENTRY * thread_p, const XASL_ID * xas
 	}
     }
 
-#if defined (ENABLE_UNUSED_FUNCTION)
   /* check for cache clone */
   if (clop)
     {
@@ -16314,7 +16301,7 @@ qexec_check_xasl_cache_ent_by_xasl (THREAD_ENTRY * thread_p, const XASL_ID * xas
 	    {			/* push clone back to free_list */
 	      /* append to LRU list */
 	      if (xasl_clo_cache.max_clones > 0	/* enable cache clone */
-		  && qexec_append_LRU_xasl_cache_clo (clo) == NO_ERROR)
+		  && qexec_append_LRU_xasl_cache_clo (thread_p, clo) == NO_ERROR)
 		{
 		  /* add to clone list */
 		  clo->next = ent->clo_list;
@@ -16323,7 +16310,7 @@ qexec_check_xasl_cache_ent_by_xasl (THREAD_ENTRY * thread_p, const XASL_ID * xas
 	      else
 		{
 		  /* give up; add to free_list */
-		  (void) qexec_free_xasl_cache_clo (clo);
+		  (void) qexec_free_xasl_cache_clo (thread_p, clo);
 		}
 	    }
 	  else
@@ -16358,7 +16345,7 @@ qexec_check_xasl_cache_ent_by_xasl (THREAD_ENTRY * thread_p, const XASL_ID * xas
 	  if (clo)
 	    {			/* push clone back to free_list */
 	      /* give up; add to free_list */
-	      (void) qexec_free_xasl_cache_clo (clo);
+	      (void) qexec_free_xasl_cache_clo (thread_p, clo);
 	    }
 	  else
 	    {			/* pop clone from free_list */
@@ -16370,7 +16357,6 @@ qexec_check_xasl_cache_ent_by_xasl (THREAD_ENTRY * thread_p, const XASL_ID * xas
 
       *clop = clo;
     }
-#endif /* ENABLE_UNUSED_FUNCTION */
 
   if (rwlock_write_unlock (QEXEC_RWLOCK_XASL_CACHE) != NO_ERROR)
     {

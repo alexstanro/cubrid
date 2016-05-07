@@ -1469,6 +1469,7 @@ xqmgr_unpack_xasl_tree (THREAD_ENTRY * thread_p, const XASL_ID * xasl_id, char *
   char *xstream;
   int xstream_size;
   int ret = NO_ERROR;
+  HL_HEAPID old_pri_heap_id = HL_NULL_HEAPID;
 
   xstream = NULL;
   xstream_size = 0;
@@ -1492,32 +1493,59 @@ xqmgr_unpack_xasl_tree (THREAD_ENTRY * thread_p, const XASL_ID * xasl_id, char *
 	      goto exit_on_error;
 	    }
 
+	  if (cache_clone_p)
+	    {
+	      /* use XASL cloning, allocate in global heap context */
+	      old_pri_heap_id = db_change_private_heap (thread_p, 0);
+	    }
+
 	  /* unpack the XASL stream to the XASL tree for execution */
 	  if (stx_map_stream_to_xasl (thread_p, xasl_tree, xstream, xstream_size, xasl_unpack_info_ptr) != NO_ERROR)
 	    {
+	      if (cache_clone_p)
+		{
+		  (void) db_change_private_heap (thread_p, old_pri_heap_id);
+		}	      
 	      goto exit_on_error;
 	    }
+	  assert (*xasl_unpack_info_ptr != NULL);
 	}
       else
 	{
 	  assert (xasl_stream != NULL);
 	  assert (xasl_stream_size > 0);
 
+	  if (cache_clone_p)
+	    {
+	      /* use XASL cloning, allocate in global heap context */
+	      old_pri_heap_id = db_change_private_heap (thread_p, 0);
+	    }
+
 	  /* unpack the XASL stream to the XASL tree for execution */
 	  if (stx_map_stream_to_xasl (thread_p, xasl_tree, xasl_stream, xasl_stream_size, xasl_unpack_info_ptr) !=
 	      NO_ERROR)
 	    {
+	      if (cache_clone_p)
+		{
+		  (void) db_change_private_heap (thread_p, old_pri_heap_id);
+		}
+	      
 	      goto exit_on_error;
 	    }
+	  assert (*xasl_unpack_info_ptr != NULL);
 	}
 
       if (cache_clone_p)
 	{
 	  assert (cache_clone_p->xasl == NULL);
 
+	  /* restore private heap */
+	  (void) db_change_private_heap (thread_p, old_pri_heap_id);
+	  
 	  /* save unpacked XASL tree info */
 	  cache_clone_p->xasl = *xasl_tree;
 	  cache_clone_p->xasl_buf_info = *xasl_unpack_info_ptr;
+	  *xasl_unpack_info_ptr = NULL;
 	}
     }
   else
@@ -1527,7 +1555,6 @@ xqmgr_unpack_xasl_tree (THREAD_ENTRY * thread_p, const XASL_ID * xasl_id, char *
     }
 
   assert (*xasl_tree != NULL);
-  assert (*xasl_unpack_info_ptr != NULL);
 
 end:
 
