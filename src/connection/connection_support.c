@@ -382,6 +382,7 @@ css_readn (SOCKET fd, char *ptr, int nbytes, int timeout)
 #if defined (WINDOWS)
   int winsock_error;
 #else
+  int bytes_available = 0;
   struct pollfd po[1] = { {0, 0, 0} };
 #endif /* WINDOWS */
 
@@ -401,36 +402,52 @@ css_readn (SOCKET fd, char *ptr, int nbytes, int timeout)
   do
     {
 #if !defined (WINDOWS)
-      po[0].fd = fd;
-      po[0].events = POLLIN;
-      po[0].revents = 0;
-      n = poll (po, 1, timeout);
-      if (n == 0)
+      /*
+       * The purpose of ioctl function call is to avoid slow call of poll function, when possible.
+       * In most of the cases, when we reach here, the poll function has been previously called. So, there is a big
+       * chance that the data already arrived - we check again here with ioctl function. If the data arrived, the recv
+       * function does not blocks, so, should be called directly (without calling slow poll function again). Otherwise,
+       * for safety reason, we call poll again before recv. We want to avoid issues when recv hung and never returned.
+       */
+      if (ioctl (fd, FIONREAD, &bytes_available) < 0)
 	{
-	  /* 0 means it timed out and no fd is changed. */
-	  errno = ETIMEDOUT;
 	  return -1;
 	}
-      else if (n < 0)
+
+      if (bytes_available <= 0)
 	{
-	  if (errno == EINTR)
+	  /* need wait */
+	  po[0].fd = fd;
+	  po[0].events = POLLIN;
+	  po[0].revents = 0;
+	  n = poll (po, 1, timeout);
+	  if (n == 0)
 	    {
-#if !defined (SERVER_MODE)
-	      if (css_server_timeout_fn != NULL)
-		{
-		  css_server_timeout_fn ();
-		}
-#endif /* !SERVER_MODE */
-	      continue;
-	    }
-	  return -1;
-	}
-      else
-	{
-	  if (po[0].revents & POLLERR || po[0].revents & POLLHUP)
-	    {
-	      errno = EINVAL;
+	      /* 0 means it timed out and no fd is changed. */
+	      errno = ETIMEDOUT;
 	      return -1;
+	    }
+	  else if (n < 0)
+	    {
+	      if (errno == EINTR)
+		{
+#if !defined (SERVER_MODE)
+		  if (css_server_timeout_fn != NULL)
+		    {
+		      css_server_timeout_fn ();
+		    }
+#endif /* !SERVER_MODE */
+		  continue;
+		}
+	      return -1;
+	    }
+	  else
+	    {
+	      if (po[0].revents & POLLERR || po[0].revents & POLLHUP)
+		{
+		  errno = EINVAL;
+		  return -1;
+		}
 	    }
 	}
 #endif /* !WINDOWS */

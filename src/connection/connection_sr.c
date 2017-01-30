@@ -142,53 +142,66 @@ CSS_THREAD_FN css_Request_handler = NULL;
 /* This will handle closed connection errors */
 CSS_THREAD_FN css_Connection_error_handler = NULL;
 
-static int css_get_next_client_id (void);
-static CSS_CONN_ENTRY *css_common_connect (CSS_CONN_ENTRY * conn, unsigned short *rid, const char *host_name,
-					   int connect_type, const char *server_name, int server_name_length, int port);
+STATIC_INLINE int css_get_next_client_id (void) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE CSS_CONN_ENTRY *css_common_connect (CSS_CONN_ENTRY * conn, unsigned short *rid, const char *host_name,
+						  int connect_type, const char *server_name, int server_name_length,
+						  int port) __attribute__ ((ALWAYS_INLINE));
 
-static int css_abort_request (CSS_CONN_ENTRY * conn, unsigned short rid);
-static void css_dealloc_conn (CSS_CONN_ENTRY * conn);
+STATIC_INLINE int css_abort_request (CSS_CONN_ENTRY * conn, unsigned short rid) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void css_dealloc_conn (CSS_CONN_ENTRY * conn) __attribute__ ((ALWAYS_INLINE));
 
 static unsigned int css_make_eid (unsigned short entry_id, unsigned short rid);
 
-static CSS_QUEUE_ENTRY *css_make_queue_entry (CSS_CONN_ENTRY * conn, unsigned int key, char *buffer, int size, int rc,
-					      int transid, int invalidate_snapshot, int db_error);
-static void css_free_queue_entry (CSS_CONN_ENTRY * conn, CSS_QUEUE_ENTRY * entry);
-static int css_add_queue_entry (CSS_CONN_ENTRY * conn, CSS_LIST * list, unsigned short request_id, char *buffer,
-				int buffer_size, int rc, int transid, int invalidate_snapshot, int db_error);
-static CSS_QUEUE_ENTRY *css_find_queue_entry (CSS_LIST * list, unsigned int key);
-static CSS_QUEUE_ENTRY *css_find_and_remove_queue_entry (CSS_LIST * list, unsigned int key);
-static CSS_WAIT_QUEUE_ENTRY *css_make_wait_queue_entry (CSS_CONN_ENTRY * conn, unsigned int key, char **buffer,
-							int *size, int *rc);
-static void css_free_wait_queue_entry (CSS_CONN_ENTRY * conn, CSS_WAIT_QUEUE_ENTRY * entry);
-static CSS_WAIT_QUEUE_ENTRY *css_add_wait_queue_entry (CSS_CONN_ENTRY * conn, CSS_LIST * list,
-						       unsigned short request_id, char **buffer, int *buffer_size,
-						       int *rc);
-static CSS_WAIT_QUEUE_ENTRY *css_find_and_remove_wait_queue_entry (CSS_LIST * list, unsigned int key);
+STATIC_INLINE CSS_QUEUE_ENTRY *css_make_queue_entry (CSS_CONN_ENTRY * conn, unsigned int key, char *buffer, int size,
+						     int rc, int transid, int invalidate_snapshot, int db_error)
+  __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void css_free_queue_entry (CSS_CONN_ENTRY * conn, CSS_QUEUE_ENTRY * entry)
+  __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE int css_add_queue_entry (CSS_CONN_ENTRY * conn, CSS_LIST * list, unsigned short request_id, char *buffer,
+				       int buffer_size, int rc, int transid, int invalidate_snapshot, int db_error)
+  __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE CSS_QUEUE_ENTRY *css_find_queue_entry (CSS_LIST * list, unsigned int key) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE CSS_QUEUE_ENTRY *css_find_and_remove_queue_entry (CSS_LIST * list,
+								unsigned int key) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE CSS_WAIT_QUEUE_ENTRY *css_make_wait_queue_entry (CSS_CONN_ENTRY * conn, unsigned int key, char **buffer,
+							       int *size, int *rc) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void css_free_wait_queue_entry (CSS_CONN_ENTRY * conn,
+					      CSS_WAIT_QUEUE_ENTRY * entry) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE CSS_WAIT_QUEUE_ENTRY *css_add_wait_queue_entry (CSS_CONN_ENTRY * conn, CSS_LIST * list,
+							      unsigned short request_id, char **buffer,
+							      int *buffer_size, int *rc)
+  __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE CSS_WAIT_QUEUE_ENTRY *css_find_and_remove_wait_queue_entry (CSS_LIST * list, unsigned int key)
+  __attribute__ ((ALWAYS_INLINE));
 
-static void css_process_close_packet (CSS_CONN_ENTRY * conn);
-static void css_process_abort_packet (CSS_CONN_ENTRY * conn, unsigned short request_id);
-static bool css_is_request_aborted (CSS_CONN_ENTRY * conn, unsigned short request_id);
-static void clear_wait_queue_entry_and_free_buffer (THREAD_ENTRY * thrdp, CSS_CONN_ENTRY * conn, unsigned short rid,
-						    char **bufferp);
-static int css_return_queued_data_timeout (CSS_CONN_ENTRY * conn, unsigned short rid, char **buffer, int *bufsize,
-					   int *rc, int waitsec);
+STATIC_INLINE void css_process_close_packet (CSS_CONN_ENTRY * conn) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void css_process_abort_packet (CSS_CONN_ENTRY * conn, unsigned short request_id)
+  __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE bool css_is_request_aborted (CSS_CONN_ENTRY * conn, unsigned short request_id)
+  __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void clear_wait_queue_entry_and_free_buffer (THREAD_ENTRY * thrdp, CSS_CONN_ENTRY * conn,
+							   unsigned short rid, char **bufferp)
+  __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE int css_return_queued_data_timeout (CSS_CONN_ENTRY * conn, unsigned short rid, char **buffer,
+						  int *bufsize, int *rc, int waitsec) __attribute__ ((ALWAYS_INLINE));
 
-static void css_queue_data_packet (CSS_CONN_ENTRY * conn, unsigned short request_id, const NET_HEADER * header,
-				   THREAD_ENTRY ** wait_thrd);
-static void css_queue_error_packet (CSS_CONN_ENTRY * conn, unsigned short request_id, const NET_HEADER * header);
-static void css_queue_command_packet (CSS_CONN_ENTRY * conn, unsigned short request_id, const NET_HEADER * header,
-				      int size);
+STATIC_INLINE void css_queue_data_packet (CSS_CONN_ENTRY * conn, unsigned short request_id, const NET_HEADER * header,
+					  THREAD_ENTRY ** wait_thrd) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void css_queue_error_packet (CSS_CONN_ENTRY * conn, unsigned short request_id, const NET_HEADER * header)
+  __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void css_queue_command_packet (CSS_CONN_ENTRY * conn, unsigned short request_id,
+					     const NET_HEADER * header, int size) __attribute__ ((ALWAYS_INLINE));
 #if defined (ENABLE_UNUSED_FUNCTION)
 static char *css_return_oob_buffer (int size);
 #endif
 static bool css_is_valid_request_id (CSS_CONN_ENTRY * conn, unsigned short request_id);
-static void css_remove_unexpected_packets (CSS_CONN_ENTRY * conn, unsigned short request_id);
+STATIC_INLINE void css_remove_unexpected_packets (CSS_CONN_ENTRY * conn, unsigned short request_id)
+  __attribute__ ((ALWAYS_INLINE));
 
 static void css_queue_packet (CSS_CONN_ENTRY * conn, int type, unsigned short request_id, const NET_HEADER * header,
 			      int size);
-static int css_remove_and_free_queue_entry (void *data, void *arg);
-static int css_remove_and_free_wait_queue_entry (void *data, void *arg);
+STATIC_INLINE int css_remove_and_free_queue_entry (void *data, void *arg) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE int css_remove_and_free_wait_queue_entry (void *data, void *arg) __attribute__ ((ALWAYS_INLINE));
 
 static int css_increment_num_conn_internal (CSS_CONN_RULE_INFO * conn_rule_info);
 static void css_decrement_num_conn_internal (CSS_CONN_RULE_INFO * conn_rule_info);
@@ -197,7 +210,7 @@ static void css_decrement_num_conn_internal (CSS_CONN_RULE_INFO * conn_rule_info
  * get_next_client_id() -
  *   return: client id
  */
-static int
+STATIC_INLINE int
 css_get_next_client_id (void)
 {
   static bool overflow = false;
@@ -636,7 +649,7 @@ css_dealloc_conn_rmutex (CSS_CONN_ENTRY * conn)
  *   return: void
  *   conn(in): connection entry will be free
  */
-static void
+STATIC_INLINE void
 css_dealloc_conn (CSS_CONN_ENTRY * conn)
 {
   int r;
@@ -1058,7 +1071,7 @@ css_register_handler_routines (int (*connect_handler) (CSS_CONN_ENTRY * conn), C
  *   server_name_length(in):
  *   port(in):
  */
-static CSS_CONN_ENTRY *
+STATIC_INLINE CSS_CONN_ENTRY *
 css_common_connect (CSS_CONN_ENTRY * conn, unsigned short *rid, const char *host_name, int connect_type,
 		    const char *server_name, int server_name_length, int port)
 {
@@ -1132,7 +1145,7 @@ css_connect_to_master_server (int master_port_id, const char *server_name, int n
 	}
       else
 	{
-	  if (css_readn (conn->fd, (char *) &response_buff, sizeof (int), -1) == sizeof (int))
+	  if (css_readn (conn->fd, (char *) &response_buff, sizeof (int), -1, false) == sizeof (int))
 	    {
 	      response = ntohl (response_buff);
 	      TRACE ("css_connect_to_master_server received %d as response from master\n", response);
@@ -1429,7 +1442,7 @@ css_get_request_id (CSS_CONN_ENTRY * conn)
  *   conn(in): connection entry
  *   rid(in): request id
  */
-static int
+STATIC_INLINE int
 css_abort_request (CSS_CONN_ENTRY * conn, unsigned short rid)
 {
   NET_HEADER header = DEFAULT_HEADER_DATA;
@@ -1488,7 +1501,7 @@ css_send_abort_request (CSS_CONN_ENTRY * conn, unsigned short request_id)
  * Note: It is a blocking read.
  */
 int
-css_read_header (CSS_CONN_ENTRY * conn, const NET_HEADER * local_header)
+css_read_header (CSS_CONN_ENTRY * conn, const NET_HEADER * local_header, bool skip_poll)
 {
   int buffer_size;
   int rc = 0;
@@ -1501,7 +1514,7 @@ css_read_header (CSS_CONN_ENTRY * conn, const NET_HEADER * local_header)
       return (CONNECTION_CLOSED);
     }
 
-  rc = css_net_read_header (conn->fd, (char *) local_header, &buffer_size, -1);
+  rc = css_net_read_header (conn->fd, (char *) local_header, &buffer_size, -1, skip_poll);
   if (rc == NO_ERRORS && ntohl (local_header->type) == CLOSE_TYPE)
     {
       return (CONNECTION_CLOSED);
@@ -1551,7 +1564,7 @@ css_read_and_queue (CSS_CONN_ENTRY * conn, int *type)
       return (ERROR_ON_READ);
     }
 
-  rc = css_read_header (conn, &header);
+  rc = css_read_header (conn, &header, false);
 
   if (conn->stop_talk == true)
     {
@@ -1639,7 +1652,7 @@ css_make_eid (unsigned short entry_id, unsigned short rid)
  *   transid(in):
  *   db_error(in):
  */
-static CSS_QUEUE_ENTRY *
+STATIC_INLINE CSS_QUEUE_ENTRY *
 css_make_queue_entry (CSS_CONN_ENTRY * conn, unsigned int key, char *buffer, int size, int rc, int transid,
 		      int invalidate_snapshot, int db_error)
 {
@@ -1676,7 +1689,7 @@ css_make_queue_entry (CSS_CONN_ENTRY * conn, unsigned int key, char *buffer, int
  *   conn(in): connection entry
  *   entry(in): queue entry
  */
-static void
+STATIC_INLINE void
 css_free_queue_entry (CSS_CONN_ENTRY * conn, CSS_QUEUE_ENTRY * entry)
 {
   if (entry != NULL)
@@ -1704,7 +1717,7 @@ css_free_queue_entry (CSS_CONN_ENTRY * conn, CSS_QUEUE_ENTRY * entry)
  *   transid(in):
  *   db_error(in):
  */
-static int
+STATIC_INLINE int
 css_add_queue_entry (CSS_CONN_ENTRY * conn, CSS_LIST * list, unsigned short request_id, char *buffer, int buffer_size,
 		     int rc, int transid, int invalidate_snapshot, int db_error)
 {
@@ -1758,7 +1771,7 @@ css_find_queue_entry_by_key (void *data, void *user)
  *   list(in): queue list
  *   key(in): key
  */
-static CSS_QUEUE_ENTRY *
+STATIC_INLINE CSS_QUEUE_ENTRY *
 css_find_queue_entry (CSS_LIST * list, unsigned int key)
 {
   CSS_QUEUE_SEARCH_ARG arg;
@@ -1778,7 +1791,7 @@ css_find_queue_entry (CSS_LIST * list, unsigned int key)
  *   list(in): queue list
  *   key(in): key
  */
-static CSS_QUEUE_ENTRY *
+STATIC_INLINE CSS_QUEUE_ENTRY *
 css_find_and_remove_queue_entry (CSS_LIST * list, unsigned int key)
 {
   CSS_QUEUE_SEARCH_ARG arg;
@@ -1801,7 +1814,7 @@ css_find_and_remove_queue_entry (CSS_LIST * list, unsigned int key)
  *   size(out):
  *   rc(out):
  */
-static CSS_WAIT_QUEUE_ENTRY *
+STATIC_INLINE CSS_WAIT_QUEUE_ENTRY *
 css_make_wait_queue_entry (CSS_CONN_ENTRY * conn, unsigned int key, char **buffer, int *size, int *rc)
 {
   CSS_WAIT_QUEUE_ENTRY *p;
@@ -1835,7 +1848,7 @@ css_make_wait_queue_entry (CSS_CONN_ENTRY * conn, unsigned int key, char **buffe
  *   conn(in): connection entry
  *   entry(in): wait queue entry
  */
-static void
+STATIC_INLINE void
 css_free_wait_queue_entry (CSS_CONN_ENTRY * conn, CSS_WAIT_QUEUE_ENTRY * entry)
 {
   if (entry != NULL)
@@ -1862,7 +1875,7 @@ css_free_wait_queue_entry (CSS_CONN_ENTRY * conn, CSS_WAIT_QUEUE_ENTRY * entry)
  *   buffer_size(out):
  *   rc(out):
  */
-static CSS_WAIT_QUEUE_ENTRY *
+STATIC_INLINE CSS_WAIT_QUEUE_ENTRY *
 css_add_wait_queue_entry (CSS_CONN_ENTRY * conn, CSS_LIST * list, unsigned short request_id, char **buffer,
 			  int *buffer_size, int *rc)
 {
@@ -1911,7 +1924,7 @@ find_wait_queue_entry_by_key (void *data, void *user)
  *   list(in): wait queue list
  *   key(in):
  */
-static CSS_WAIT_QUEUE_ENTRY *
+STATIC_INLINE CSS_WAIT_QUEUE_ENTRY *
 css_find_and_remove_wait_queue_entry (CSS_LIST * list, unsigned int key)
 {
   CSS_WAIT_QUEUE_SEARCH_ARG arg;
@@ -2008,7 +2021,7 @@ css_queue_packet (CSS_CONN_ENTRY * conn, int type, unsigned short request_id, co
  *   return: void
  *   conn(in): conenction entry
  */
-static void
+STATIC_INLINE void
 css_process_close_packet (CSS_CONN_ENTRY * conn)
 {
   if (!IS_INVALID_SOCKET (conn->fd))
@@ -2026,7 +2039,7 @@ css_process_close_packet (CSS_CONN_ENTRY * conn)
  *   conn(in): connection entry
  *   request_id(in): request id
  */
-static void
+STATIC_INLINE void
 css_process_abort_packet (CSS_CONN_ENTRY * conn, unsigned short request_id)
 {
   CSS_QUEUE_ENTRY *request, *data;
@@ -2058,7 +2071,7 @@ css_process_abort_packet (CSS_CONN_ENTRY * conn, unsigned short request_id)
  *   header(in): network header
  *   wake_thrd(out): thread that wake up
  */
-static void
+STATIC_INLINE void
 css_queue_data_packet (CSS_CONN_ENTRY * conn, unsigned short request_id, const NET_HEADER * header,
 		       THREAD_ENTRY ** wake_thrd)
 {
@@ -2127,7 +2140,7 @@ css_queue_data_packet (CSS_CONN_ENTRY * conn, unsigned short request_id, const N
   /* receive data into buffer and queue data if there's no waiting thread */
   if (buffer != NULL)
     {
-      rc = css_net_recv (conn->fd, buffer, &size, -1);
+      rc = css_net_recv (conn->fd, buffer, &size, -1, true);
       if (rc == NO_ERRORS || rc == RECORD_TRUNCATED)
 	{
 	  if (!css_is_request_aborted (conn, request_id))
@@ -2196,7 +2209,7 @@ css_queue_error_packet (CSS_CONN_ENTRY * conn, unsigned short request_id, const 
 
   if (buffer != NULL)
     {
-      rc = css_net_recv (conn->fd, buffer, &size, -1);
+      rc = css_net_recv (conn->fd, buffer, &size, -1, false);
       if (rc == NO_ERRORS || rc == RECORD_TRUNCATED)
 	{
 	  if (!css_is_request_aborted (conn, request_id))
@@ -2228,7 +2241,7 @@ css_queue_error_packet (CSS_CONN_ENTRY * conn, unsigned short request_id, const 
  *   header(in): network header
  *   size(in): packet size
  */
-static void
+STATIC_INLINE void
 css_queue_command_packet (CSS_CONN_ENTRY * conn, unsigned short request_id, const NET_HEADER * header, int size)
 {
   NET_HEADER *p;
@@ -2257,7 +2270,7 @@ css_queue_command_packet (CSS_CONN_ENTRY * conn, unsigned short request_id, cons
 			   conn->invalidate_snapshot, conn->db_error);
       if (ntohl (header->buffer_size) > 0)
 	{
-	  css_read_header (conn, &data_header);
+	  css_read_header (conn, &data_header, true);
 	  css_queue_packet (conn, (int) ntohl (data_header.type), (unsigned short) ntohl (data_header.request_id),
 			    &data_header, sizeof (NET_HEADER));
 	}
@@ -2270,7 +2283,7 @@ css_queue_command_packet (CSS_CONN_ENTRY * conn, unsigned short request_id, cons
  *   conn(in): connection entry
  *   request_id(in): request id
  */
-static bool
+STATIC_INLINE bool
 css_is_request_aborted (CSS_CONN_ENTRY * conn, unsigned short request_id)
 {
   CSS_QUEUE_ENTRY *p;
@@ -2348,7 +2361,7 @@ css_return_queued_request (CSS_CONN_ENTRY * conn, unsigned short *rid, int *requ
  *   rid(in): request id
  *   bufferp(in): data buffer
  */
-static void
+STATIC_INLINE void
 clear_wait_queue_entry_and_free_buffer (THREAD_ENTRY * thrdp, CSS_CONN_ENTRY * conn, unsigned short rid, char **bufferp)
 {
   CSS_WAIT_QUEUE_ENTRY *data_wait;
@@ -2391,7 +2404,7 @@ clear_wait_queue_entry_and_free_buffer (THREAD_ENTRY * thrdp, CSS_CONN_ENTRY * c
  *   rc(out):
  *   waitsec: timeout second
  */
-static int
+STATIC_INLINE int
 css_return_queued_data_timeout (CSS_CONN_ENTRY * conn, unsigned short rid, char **buffer, int *bufsize, int *rc,
 				int waitsec)
 {
@@ -2666,7 +2679,7 @@ css_is_valid_request_id (CSS_CONN_ENTRY * conn, unsigned short request_id)
  *   conn(in): connection entry
  *   request_id(in): request id
  */
-void
+STATIC_INLINE void
 css_remove_unexpected_packets (CSS_CONN_ENTRY * conn, unsigned short request_id)
 {
   css_free_queue_entry (conn, css_find_and_remove_queue_entry (&conn->request_queue, request_id));
@@ -2708,7 +2721,7 @@ css_queue_user_data_buffer (CSS_CONN_ENTRY * conn, unsigned short request_id, in
  *   data(in): connection entry
  *   arg(in): queue entry
  */
-static int
+STATIC_INLINE int
 css_remove_and_free_queue_entry (void *data, void *arg)
 {
   css_free_queue_entry ((CSS_CONN_ENTRY *) arg, (CSS_QUEUE_ENTRY *) data);
@@ -2721,7 +2734,7 @@ css_remove_and_free_queue_entry (void *data, void *arg)
  *   data(in): connection entry
  *   arg(in): wait queue entry
  */
-static int
+STATIC_INLINE int
 css_remove_and_free_wait_queue_entry (void *data, void *arg)
 {
   css_free_wait_queue_entry ((CSS_CONN_ENTRY *) arg, (CSS_WAIT_QUEUE_ENTRY *) data);
