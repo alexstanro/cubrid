@@ -161,7 +161,7 @@ extern int css_get_session_ids_for_active_connections (SESSION_ID ** ids, int *c
 extern void css_shutdown_conn_by_tran_index (int tran_index);
 
 extern int css_send_abort_request (CSS_CONN_ENTRY * conn, unsigned short request_id);
-extern int css_read_header (CSS_CONN_ENTRY * conn, const NET_HEADER * local_header);
+extern int css_read_header (CSS_CONN_ENTRY * conn, const NET_HEADER * local_header, bool has_bytes_available);
 extern int css_receive_request (CSS_CONN_ENTRY * conn, unsigned short *rid, int *request, int *buffer_size);
 extern int css_read_and_queue (CSS_CONN_ENTRY * conn, int *type, bool has_bytes_available);
 extern int css_receive_data (CSS_CONN_ENTRY * conn, unsigned short req_id, char **buffer, int *buffer_size,

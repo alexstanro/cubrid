@@ -97,7 +97,7 @@ static void css_initialize_conn (CSS_CONN_ENTRY * conn, SOCKET fd);
 static void css_close_conn (CSS_CONN_ENTRY * conn);
 static void css_dealloc_conn (CSS_CONN_ENTRY * conn);
 
-static int css_read_header (CSS_CONN_ENTRY * conn, NET_HEADER * local_header);
+static int css_read_header (CSS_CONN_ENTRY * conn, NET_HEADER * local_header, bool has_bytes_available);
 static int css_read_one_request (CSS_CONN_ENTRY * conn, unsigned short *rid, int *request, int *buffer_size);
 static CSS_CONN_ENTRY *css_common_connect (const char *host_name, CSS_CONN_ENTRY * conn, int connect_type,
 					   const char *server_name, int server_name_length, int port, int timeout,
@@ -358,7 +358,7 @@ css_send_close_request (CSS_CONN_ENTRY * conn)
  * Note: It is a blocking read.
  */
 static int
-css_read_header (CSS_CONN_ENTRY * conn, NET_HEADER * local_header)
+css_read_header (CSS_CONN_ENTRY * conn, NET_HEADER * local_header, bool has_bytes_available)
 {
   int buffer_size;
   int rc = 0;
@@ -416,7 +416,7 @@ css_read_one_request (CSS_CONN_ENTRY * conn, unsigned short *rid, int *request, 
       return NO_ERRORS;
     }
 
-  rc = css_read_header (conn, &local_header);
+  rc = css_read_header (conn, &local_header, false);
   if (rc == NO_ERRORS)
     {
       *rid = (unsigned short) ntohl (local_header.request_id);
