@@ -204,7 +204,7 @@ css_receive_heartbeat_request (CSS_CONN_ENTRY * conn, int *command)
 
   if (conn && !IS_INVALID_SOCKET (conn->fd))
     {
-      nbytes = css_readn (conn->fd, (char *) &request, size, -1);
+      nbytes = css_readn (conn->fd, (char *) &request, size, -1, false);
       if (nbytes == size)
 	{
 	  *command = ntohl (request);
@@ -230,7 +230,7 @@ css_receive_heartbeat_data (CSS_CONN_ENTRY * conn, char *data, int size)
 
   if (conn && !IS_INVALID_SOCKET (conn->fd))
     {
-      nbytes = css_readn (conn->fd, data, size, -1);
+      nbytes = css_readn (conn->fd, data, size, -1, false);
       if (nbytes == size)
 	{
 	  return NO_ERRORS;
