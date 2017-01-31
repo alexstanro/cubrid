@@ -944,7 +944,7 @@ css_get_master_request (SOCKET master_fd)
 {
   int request, r;
 
-  r = css_readn (master_fd, (char *) &request, sizeof (int), -1);
+  r = css_readn (master_fd, (char *) &request, sizeof (int), -1, false);
   if (r == sizeof (int))
     {
       return ((int) ntohl (request));
@@ -1022,7 +1022,7 @@ css_process_shutdown_request (SOCKET master_fd)
 
   timeout = (int) css_get_master_request (master_fd);
 
-  r = css_readn (master_fd, buffer, MASTER_TO_SRV_MSG_SIZE, -1);
+  r = css_readn (master_fd, buffer, MASTER_TO_SRV_MSG_SIZE, -1, false);
   if (r < 0)
     {
       er_set_with_oserror (ER_ERROR_SEVERITY, ARG_FILE_LINE, ERR_CSS_SHUTDOWN_ERROR, 0);
@@ -1278,7 +1278,7 @@ css_process_new_connection_request (void)
 	  r = rmutex_initialize (&new_conn.rmutex, RMUTEX_NAME_TEMP_CONN_ENTRY);
 	  assert (r == NO_ERROR);
 
-	  rc = css_read_header (&new_conn, &header);
+	  rc = css_read_header (&new_conn, &header, false);
 	  buffer_size = rid = 0;
 
 	  reason = htonl (SERVER_INACCESSIBLE_IP);
@@ -1308,7 +1308,7 @@ css_process_new_connection_request (void)
 	  r = rmutex_initialize (&new_conn.rmutex, RMUTEX_NAME_TEMP_CONN_ENTRY);
 	  assert (r == NO_ERROR);
 
-	  rc = css_read_header (&new_conn, &header);
+	  rc = css_read_header (&new_conn, &header, false);
 	  buffer_size = rid = 0;
 	  er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_CSS_CLIENTS_EXCEEDED, 1, NUM_NORMAL_TRANS);
 	  reason = htonl (SERVER_CLIENTS_EXCEEDED);
@@ -1334,7 +1334,7 @@ css_process_new_connection_request (void)
 	      break;
 	    }
 
-	  rc = css_read_header (conn, &header);
+	  rc = css_read_header (conn, &header, false);
 	  if (rc == NO_ERRORS)
 	    {
 	      rid = (unsigned short) ntohl (header.request_id);
@@ -1542,7 +1542,7 @@ css_connection_handler_thread (THREAD_ENTRY * thread_p, CSS_CONN_ENTRY * conn)
 	    }
 
 	  /* read command/data/etc request from socket, and enqueue it to appr. queue */
-	  status = css_read_and_queue (conn, &type);
+	  status = css_read_and_queue (conn, &type, true);
 	  if (status != NO_ERRORS)
 	    {
 	      er_log_debug (ARG_FILE_LINE, "css_connection_handler_thread: " "css_read_and_queue() error\n");

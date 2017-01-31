@@ -535,7 +535,7 @@ css_register_new_server2 (CSS_CONN_ENTRY * conn, unsigned short rid)
 	  /* accept but make it send us a port id */
 	  css_accept_server_request (conn, SERVER_REQUEST_ACCEPTED_NEW);
 	  name_length = sizeof (buffer);
-	  if (css_net_recv (conn->fd, (char *) &buffer, &name_length, -1) == NO_ERRORS)
+	  if (css_net_recv (conn->fd, (char *) &buffer, &name_length, -1, false) == NO_ERRORS)
 	    {
 #if defined(DEBUG)
 	      css_Active_server_count++;

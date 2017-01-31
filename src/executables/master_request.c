@@ -795,7 +795,7 @@ css_process_get_server_ha_mode (CSS_CONN_ENTRY * conn, unsigned short request_id
 	{
 	  css_send_command_to_server (temp, SERVER_GET_HA_MODE);
 
-	  len = css_readn (temp->conn_ptr->fd, (char *) &response, sizeof (int), -1);
+	  len = css_readn (temp->conn_ptr->fd, (char *) &response, sizeof (int), -1, false);
 	  if (len < 0)
 	    {
 	      return;

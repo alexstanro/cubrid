@@ -1497,11 +1497,12 @@ css_send_abort_request (CSS_CONN_ENTRY * conn, unsigned short request_id)
  *   return: 0 if success, or error code
  *   conn(in): connection entry
  *   local_header(in):
+ *   has_bytes_available(in): true, if has bytes available
  *
  * Note: It is a blocking read.
  */
 int
-css_read_header (CSS_CONN_ENTRY * conn, const NET_HEADER * local_header, bool skip_poll)
+css_read_header (CSS_CONN_ENTRY * conn, const NET_HEADER * local_header, bool has_bytes_available)
 {
   int buffer_size;
   int rc = 0;
@@ -1514,7 +1515,7 @@ css_read_header (CSS_CONN_ENTRY * conn, const NET_HEADER * local_header, bool sk
       return (CONNECTION_CLOSED);
     }
 
-  rc = css_net_read_header (conn->fd, (char *) local_header, &buffer_size, -1, skip_poll);
+  rc = css_net_read_header (conn->fd, (char *) local_header, &buffer_size, -1, has_bytes_available);
   if (rc == NO_ERRORS && ntohl (local_header->type) == CLOSE_TYPE)
     {
       return (CONNECTION_CLOSED);
@@ -1552,9 +1553,10 @@ css_receive_request (CSS_CONN_ENTRY * conn, unsigned short *rid, int *request, i
  *   return: 0 if success, or error code
  *   conn(in): connection entry
  *   type(out): request type
+ *   has_bytes_available(in): true, if has bytes available
  */
 int
-css_read_and_queue (CSS_CONN_ENTRY * conn, int *type)
+css_read_and_queue (CSS_CONN_ENTRY * conn, int *type, bool has_bytes_available)
 {
   int rc;
   NET_HEADER header = DEFAULT_HEADER_DATA;
@@ -1564,7 +1566,7 @@ css_read_and_queue (CSS_CONN_ENTRY * conn, int *type)
       return (ERROR_ON_READ);
     }
 
-  rc = css_read_header (conn, &header, false);
+  rc = css_read_header (conn, &header, has_bytes_available);
 
   if (conn->stop_talk == true)
     {
@@ -2140,7 +2142,7 @@ css_queue_data_packet (CSS_CONN_ENTRY * conn, unsigned short request_id, const N
   /* receive data into buffer and queue data if there's no waiting thread */
   if (buffer != NULL)
     {
-      rc = css_net_recv (conn->fd, buffer, &size, -1, true);
+      rc = css_net_recv (conn->fd, buffer, &size, -1, false);
       if (rc == NO_ERRORS || rc == RECORD_TRUNCATED)
 	{
 	  if (!css_is_request_aborted (conn, request_id))
@@ -2270,7 +2272,7 @@ css_queue_command_packet (CSS_CONN_ENTRY * conn, unsigned short request_id, cons
 			   conn->invalidate_snapshot, conn->db_error);
       if (ntohl (header->buffer_size) > 0)
 	{
-	  css_read_header (conn, &data_header, true);
+	  css_read_header (conn, &data_header, false);
 	  css_queue_packet (conn, (int) ntohl (data_header.type), (unsigned short) ntohl (data_header.request_id),
 			    &data_header, sizeof (NET_HEADER));
 	}

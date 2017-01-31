@@ -373,16 +373,17 @@ css_net_send_no_block (SOCKET fd, const char *buffer, int size)
  *   ptr(out): buffer
  *   nbytes(in): count of bytes will be read
  *   timeout(in): timeout in milli-second
+ *   has_bytes_available(in): true, if has bytes available
  */
 int
-css_readn (SOCKET fd, char *ptr, int nbytes, int timeout)
+css_readn (SOCKET fd, char *ptr, int nbytes, int timeout, bool has_bytes_available)
 {
   int nleft, n;
 
 #if defined (WINDOWS)
   int winsock_error;
 #else
-  int bytes_available = 0;
+  int count_bytes_available = 0;
   struct pollfd po[1] = { {0, 0, 0} };
 #endif /* WINDOWS */
 
@@ -409,14 +410,23 @@ css_readn (SOCKET fd, char *ptr, int nbytes, int timeout)
        * function does not blocks, so, should be called directly (without calling slow poll function again). Otherwise,
        * for safety reason, we call poll again before recv. We want to avoid issues when recv hung and never returned.
        */
-      if (ioctl (fd, FIONREAD, &bytes_available) < 0)
+
+      if (has_bytes_available == false)
 	{
-	  return -1;
+	  if (ioctl (fd, FIONREAD, &count_bytes_available) < 0)
+	    {
+	      return -1;
+	    }
+	  has_bytes_available = (count_bytes_available > 0);
+	}
+      else
+	{
+	  assert (ioctl (fd, FIONREAD, &count_bytes_available) > 0);
 	}
 
-      if (bytes_available <= 0)
+      if (has_bytes_available == false)
 	{
-	  /* need wait */
+	  /* need wait, since no bytes available */
 	  po[0].fd = fd;
 	  po[0].events = POLLIN;
 	  po[0].revents = 0;
@@ -530,7 +540,7 @@ css_read_remaining_bytes (SOCKET fd, int len)
 	  buf_size = SSIZEOF (temp_buffer);
 	}
 
-      nbytes = css_readn (fd, temp_buffer, buf_size, -1);
+      nbytes = css_readn (fd, temp_buffer, buf_size, -1, false);
       /* 
        * nbytes will be less than the size of the buffer if any of the
        * following hold:
@@ -555,9 +565,10 @@ css_read_remaining_bytes (SOCKET fd, int len)
  *   buffer(out): buffer for date be read
  *   maxlen(out): count of bytes was read
  *   timeout(in): timeout value in milli-second
+ *   has_bytes_available(in): true, if has bytes available
  */
 int
-css_net_recv (SOCKET fd, char *buffer, int *maxlen, int timeout)
+css_net_recv (SOCKET fd, char *buffer, int *maxlen, int timeout, bool has_bytes_available)
 {
   int nbytes;
   int templen;
@@ -575,7 +586,7 @@ css_net_recv (SOCKET fd, char *buffer, int *maxlen, int timeout)
   /* read data length */
   while (true)
     {
-      nbytes = css_readn (fd, (char *) &templen, sizeof (int), time_unit);
+      nbytes = css_readn (fd, (char *) &templen, sizeof (int), time_unit, has_bytes_available);
       if (nbytes < 0)
 	{
 	  if (errno == ETIMEDOUT && timeout > elapsed)
@@ -625,7 +636,7 @@ css_net_recv (SOCKET fd, char *buffer, int *maxlen, int timeout)
     }
 
   /* read data */
-  nbytes = css_readn (fd, buffer, length_to_read, timeout);
+  nbytes = css_readn (fd, buffer, length_to_read, timeout, false);
   if (nbytes < length_to_read)
     {
 #ifdef CUBRID_DEBUG
@@ -1461,11 +1472,12 @@ css_net_send_buffer_only (CSS_CONN_ENTRY * conn, const char *buff, int len, int 
  *   buffer(out): buffer for date be read
  *   maxlen(out): count of bytes was read
  *   timeout(in):
+ *   has_bytes_available(in): true, if has bytes available
  */
 int
-css_net_read_header (SOCKET fd, char *buffer, int *maxlen, int timeout)
+css_net_read_header (SOCKET fd, char *buffer, int *maxlen, int timeout, bool has_bytes_available)
 {
-  return css_net_recv (fd, buffer, maxlen, timeout);
+  return css_net_recv (fd, buffer, maxlen, timeout, has_bytes_available);
 }
 
 static void
@@ -2443,7 +2455,7 @@ css_check_magic (CSS_CONN_ENTRY * conn)
   char *p;
   int timeout = prm_get_integer_value (PRM_ID_TCP_CONNECTION_TIMEOUT) * 1000;
 
-  nbytes = css_readn (conn->fd, (char *) &size, sizeof (int), timeout);
+  nbytes = css_readn (conn->fd, (char *) &size, sizeof (int), timeout, false);
   if (nbytes != sizeof (int))
     {
       return ERROR_WHEN_READING_SIZE;
@@ -2455,7 +2467,7 @@ css_check_magic (CSS_CONN_ENTRY * conn)
     }
 
   p = (char *) &header;
-  nbytes = css_readn (conn->fd, p, size, timeout);
+  nbytes = css_readn (conn->fd, p, size, timeout, false);
   if (nbytes != size)
     {
       return ERROR_ON_READ;

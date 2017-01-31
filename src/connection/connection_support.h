@@ -38,14 +38,14 @@ typedef void (*CSS_SERVER_TIMEOUT_FN) (void);
 typedef bool (*CSS_CHECK_SERVER_ALIVE_FN) (const char *, const char *);
 extern CSS_CHECK_SERVER_ALIVE_FN css_check_server_alive_fn;
 
-extern int css_readn (SOCKET fd, char *ptr, int nbytes, int timeout);
+extern int css_readn (SOCKET fd, char *ptr, int nbytes, int timeout, bool has_bytes_available);
 extern void css_read_remaining_bytes (SOCKET fd, int len);
 
-extern int css_net_recv (SOCKET fd, char *buffer, int *maxlen, int timeout);
+extern int css_net_recv (SOCKET fd, char *buffer, int *maxlen, int timeout, bool has_bytes_available);
 extern int css_net_send (CSS_CONN_ENTRY * conn, const char *buff, int len, int timeout);
 extern int css_net_send_buffer_only (CSS_CONN_ENTRY * conn, const char *buff, int len, int timeout);
 
-extern int css_net_read_header (SOCKET fd, char *buffer, int *maxlen, int timeout);
+extern int css_net_read_header (SOCKET fd, char *buffer, int *maxlen, int timeout, bool has_bytes_available);
 
 extern int css_send_request_with_data_buffer (CSS_CONN_ENTRY * conn, int request, unsigned short *rid,
 					      const char *arg_buffer, int arg_buffer_size, char *data_buffer,

@@ -352,7 +352,7 @@ css_recv_and_queue_packet (CSS_CONN_ENTRY * conn, unsigned short request_id, cha
 {
   int rc;
 
-  rc = css_net_recv (conn->fd, buffer, &size, -1);
+  rc = css_net_recv (conn->fd, buffer, &size, -1, false);
   if (rc == NO_ERRORS || rc == RECORD_TRUNCATED)
     {
       if (!css_is_request_aborted (conn, request_id))

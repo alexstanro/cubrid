@@ -366,7 +366,7 @@ css_read_header (CSS_CONN_ENTRY * conn, NET_HEADER * local_header)
 
   buffer_size = sizeof (NET_HEADER);
 
-  rc = css_net_read_header (conn->fd, (char *) local_header, &buffer_size, -1);
+  rc = css_net_read_header (conn->fd, (char *) local_header, &buffer_size, -1, false);
   if (rc == NO_ERRORS && ntohl (local_header->type) == CLOSE_TYPE)
     {
       css_shutdown_conn (conn);
@@ -504,7 +504,7 @@ css_receive_data (CSS_CONN_ENTRY * conn, unsigned short req_id, char **buffer, i
 
 begin:
   header_size = sizeof (NET_HEADER);
-  rc = css_net_read_header (conn->fd, (char *) &header, &header_size, timeout);
+  rc = css_net_read_header (conn->fd, (char *) &header, &header_size, timeout, false);
   if (rc == NO_ERRORS)
     {
       rid = ntohl (header.request_id);
@@ -526,7 +526,7 @@ begin:
 
 	  if (buf != NULL)
 	    {
-	      rc = css_net_recv (conn->fd, buf, &buf_size, timeout);
+	      rc = css_net_recv (conn->fd, buf, &buf_size, timeout, false);
 	      if (rc == NO_ERRORS || rc == RECORD_TRUNCATED)
 		{
 		  if (req_id != rid)
@@ -617,7 +617,7 @@ css_receive_error (CSS_CONN_ENTRY * conn, unsigned short req_id, char **buffer, 
 
 begin:
   header_size = sizeof (NET_HEADER);
-  rc = css_net_read_header (conn->fd, (char *) &header, &header_size, -1);
+  rc = css_net_read_header (conn->fd, (char *) &header, &header_size, -1, false);
   if (rc == NO_ERRORS)
     {
       rid = ntohl (header.request_id);
@@ -632,7 +632,7 @@ begin:
 	      buf = (char *) css_return_data_buffer (conn, rid, &buf_size);
 	      if (buf != NULL)
 		{
-		  rc = css_net_recv (conn->fd, buf, &buf_size, -1);
+		  rc = css_net_recv (conn->fd, buf, &buf_size, -1, false);
 		  if (rc == NO_ERRORS || rc == RECORD_TRUNCATED)
 		    {
 		      if (req_id != rid)
@@ -862,7 +862,7 @@ css_connect_to_master_server (int master_port_id, const char *server_name, int n
 	}
       else
 	{
-	  if (css_readn (conn->fd, (char *) &response_buff, sizeof (int), -1) == sizeof (int))
+	  if (css_readn (conn->fd, (char *) &response_buff, sizeof (int), -1, false) == sizeof (int))
 	    {
 	      response = ntohl (response_buff);
 
