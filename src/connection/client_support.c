@@ -588,6 +588,7 @@ css_receive_data_from_server_with_timeout (unsigned int eid, char **buffer, int 
 {
   CSS_MAP_ENTRY *entry;
   int rid;
+  int count_available_bytes = 0;	/* TO DO - use a  parameter */
 
   entry = css_return_entry_from_eid (eid, css_Client_anchor);
   if (entry == NULL)
@@ -597,7 +598,7 @@ css_receive_data_from_server_with_timeout (unsigned int eid, char **buffer, int 
     }
 
   rid = CSS_RID_FROM_EID (eid);
-  css_Errno = css_receive_data (entry->conn, rid, buffer, size, timeout);
+  css_Errno = css_receive_data (entry->conn, rid, buffer, size, timeout, NULL /* &count_available_bytes */ );
   if (css_Errno == NO_ERRORS || css_Errno == SERVER_ABORTED)
     {
       css_test_for_server_errors (entry, eid);

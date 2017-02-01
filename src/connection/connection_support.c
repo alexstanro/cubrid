@@ -373,17 +373,17 @@ css_net_send_no_block (SOCKET fd, const char *buffer, int size)
  *   ptr(out): buffer
  *   nbytes(in): count of bytes will be read
  *   timeout(in): timeout in milli-second
- *   has_bytes_available(in): true, if has bytes available
+ *   p_count_available_bytes(in/out): count available bytes pointer
  */
 int
-css_readn (SOCKET fd, char *ptr, int nbytes, int timeout, bool has_bytes_available)
+css_readn (SOCKET fd, char *ptr, int nbytes, int timeout, int *p_count_available_bytes)
 {
   int nleft, n;
 
+  int count_available_bytes;
 #if defined (WINDOWS)
   int winsock_error;
 #else
-  int count_bytes_available = 0;
   struct pollfd po[1] = { {0, 0, 0} };
 #endif /* WINDOWS */
 
@@ -391,13 +391,19 @@ css_readn (SOCKET fd, char *ptr, int nbytes, int timeout, bool has_bytes_availab
     {
       er_log_debug (ARG_FILE_LINE, "css_readn: fd < 0");
       errno = EINVAL;
-      return -1;
+      goto error;
     }
 
   if (nbytes <= 0)
     {
+      if (p_count_available_bytes)
+	{
+	  *p_count_available_bytes = 0;
+	}
       return 0;
     }
+
+  count_available_bytes = (p_count_available_bytes != NULL) ? *p_count_available_bytes : 0;
 
   nleft = nbytes;
   do
@@ -411,22 +417,19 @@ css_readn (SOCKET fd, char *ptr, int nbytes, int timeout, bool has_bytes_availab
        * for safety reason, we call poll again before recv. We want to avoid issues when recv hung and never returned.
        */
 
-      if (has_bytes_available == false)
+      /* TO DO - macros */
+      if (count_available_bytes < 0)
 	{
-	  if (ioctl (fd, FIONREAD, &count_bytes_available) < 0)
+	  /* We don't know whether are available bytes. */
+	  if (ioctl (fd, FIONREAD, NULL /* &count_available_bytes */ ) < 0)
 	    {
 	      return -1;
 	    }
-	  has_bytes_available = (count_bytes_available > 0);
-	}
-      else
-	{
-	  assert (ioctl (fd, FIONREAD, &count_bytes_available) > 0);
 	}
 
-      if (has_bytes_available == false)
+      if (count_available_bytes == 0)
 	{
-	  /* need wait, since no bytes available */
+	  /* Need to wait, since there is no byte available. */
 	  po[0].fd = fd;
 	  po[0].events = POLLIN;
 	  po[0].revents = 0;
@@ -435,7 +438,7 @@ css_readn (SOCKET fd, char *ptr, int nbytes, int timeout, bool has_bytes_availab
 	    {
 	      /* 0 means it timed out and no fd is changed. */
 	      errno = ETIMEDOUT;
-	      return -1;
+	      goto error;
 	    }
 	  else if (n < 0)
 	    {
@@ -449,15 +452,29 @@ css_readn (SOCKET fd, char *ptr, int nbytes, int timeout, bool has_bytes_availab
 #endif /* !SERVER_MODE */
 		  continue;
 		}
-	      return -1;
+	      goto error;
 	    }
 	  else
 	    {
 	      if (po[0].revents & POLLERR || po[0].revents & POLLHUP)
 		{
 		  errno = EINVAL;
-		  return -1;
+		  goto error;
 		}
+	    }
+	}
+      else
+	{
+	  assert (ioctl (fd, FIONREAD, NULL /* &count_available_bytes */ ) >= 0);
+	}
+#else
+      /* debugging purpose only */
+      if (count_available_bytes < 0)
+	{
+	  /* We don't know whether are available bytes. */
+	  if (ioctlsocket (fd, FIONREAD, &count_available_bytes) < 0)
+	    {
+	      return -1;
 	    }
 	}
 #endif /* !WINDOWS */
@@ -502,6 +519,10 @@ css_readn (SOCKET fd, char *ptr, int nbytes, int timeout, bool has_bytes_availab
 #ifdef CUBRID_DEBUG
 	  er_log_debug (ARG_FILE_LINE, "css_readn: returning error n %d, errno %d\n", n, errno);
 #endif
+	  if (p_count_available_bytes)
+	    {
+	      *p_count_available_bytes = 0;
+	    }
 	  return n;		/* error, return < 0 */
 	}
       nleft -= n;
@@ -509,14 +530,28 @@ css_readn (SOCKET fd, char *ptr, int nbytes, int timeout, bool has_bytes_availab
     }
   while (nleft > 0);
 
+  /* in case of negative count_available_bytes, next time will be computed again */
+  if (p_count_available_bytes)
+    {
+      *p_count_available_bytes = count_available_bytes - (nbytes - nleft);
+    }
+
   return (nbytes - nleft);	/* return >= 0 */
+
+error:
+  if (p_count_available_bytes)
+    {
+      *p_count_available_bytes = 0;
+    }
+  return -1;
 }
 
 /*
  * css_read_remaining_bytes() - read remaining data
  *   return: void
- *   fd(in): socket descripter
+ *   fd(in): socket descriptor
  *   len(in): count of bytes
+ *   p_count_available_bytes(in/out): count available bytes pointer
  *
  * Note: This routine will "use up" any remaining data that may be on the
  *       socket, but for which no space has been allocated.
@@ -524,7 +559,7 @@ css_readn (SOCKET fd, char *ptr, int nbytes, int timeout, bool has_bytes_availab
  *       that is too small for the data sent by the server.
  */
 void
-css_read_remaining_bytes (SOCKET fd, int len)
+css_read_remaining_bytes (SOCKET fd, int len, int *p_count_available_bytes)
 {
   char temp_buffer[CSS_TRUNCATE_BUFFER_SIZE];
   int nbytes, buf_size;
@@ -540,7 +575,7 @@ css_read_remaining_bytes (SOCKET fd, int len)
 	  buf_size = SSIZEOF (temp_buffer);
 	}
 
-      nbytes = css_readn (fd, temp_buffer, buf_size, -1, false);
+      nbytes = css_readn (fd, temp_buffer, buf_size, -1, p_count_available_bytes);
       /* 
        * nbytes will be less than the size of the buffer if any of the
        * following hold:
@@ -561,14 +596,14 @@ css_read_remaining_bytes (SOCKET fd, int len)
 /*
  * css_net_recv() - reading a "packet" from the socket.
  *   return: 0 if success, or error code
- *   fd(in): socket descripter
+ *   fd(in): socket descriptor
  *   buffer(out): buffer for date be read
  *   maxlen(out): count of bytes was read
  *   timeout(in): timeout value in milli-second
- *   has_bytes_available(in): true, if has bytes available
+ *   p_count_available_bytes(in/out): count available bytes pointer
  */
 int
-css_net_recv (SOCKET fd, char *buffer, int *maxlen, int timeout, bool has_bytes_available)
+css_net_recv (SOCKET fd, char *buffer, int *maxlen, int timeout, int *p_count_available_bytes)
 {
   int nbytes;
   int templen;
@@ -586,7 +621,7 @@ css_net_recv (SOCKET fd, char *buffer, int *maxlen, int timeout, bool has_bytes_
   /* read data length */
   while (true)
     {
-      nbytes = css_readn (fd, (char *) &templen, sizeof (int), time_unit, has_bytes_available);
+      nbytes = css_readn (fd, (char *) &templen, sizeof (int), time_unit, p_count_available_bytes);
       if (nbytes < 0)
 	{
 	  if (errno == ETIMEDOUT && timeout > elapsed)
@@ -636,7 +671,7 @@ css_net_recv (SOCKET fd, char *buffer, int *maxlen, int timeout, bool has_bytes_
     }
 
   /* read data */
-  nbytes = css_readn (fd, buffer, length_to_read, timeout, false);
+  nbytes = css_readn (fd, buffer, length_to_read, timeout, p_count_available_bytes);
   if (nbytes < length_to_read)
     {
 #ifdef CUBRID_DEBUG
@@ -652,7 +687,7 @@ css_net_recv (SOCKET fd, char *buffer, int *maxlen, int timeout, bool has_bytes_
 
   if (nbytes && (templen > nbytes))
     {
-      css_read_remaining_bytes (fd, templen - nbytes);
+      css_read_remaining_bytes (fd, templen - nbytes, p_count_available_bytes);
       return RECORD_TRUNCATED;
     }
 
@@ -1472,12 +1507,12 @@ css_net_send_buffer_only (CSS_CONN_ENTRY * conn, const char *buff, int len, int 
  *   buffer(out): buffer for date be read
  *   maxlen(out): count of bytes was read
  *   timeout(in):
- *   has_bytes_available(in): true, if has bytes available
+ *   p_count_available_bytes(in/out): count available bytes pointer
  */
 int
-css_net_read_header (SOCKET fd, char *buffer, int *maxlen, int timeout, bool has_bytes_available)
+css_net_read_header (SOCKET fd, char *buffer, int *maxlen, int timeout, int *p_count_available_bytes)
 {
-  return css_net_recv (fd, buffer, maxlen, timeout, has_bytes_available);
+  return css_net_recv (fd, buffer, maxlen, timeout, p_count_available_bytes);
 }
 
 static void

@@ -222,7 +222,7 @@ send_for_start_time (CSS_CONN_ENTRY * conn)
 static void
 return_string (CSS_CONN_ENTRY * conn, unsigned short request_id, char **buffer, int *buffer_size)
 {
-  css_receive_data (conn, request_id, buffer, buffer_size, -1);
+  css_receive_data (conn, request_id, buffer, buffer_size, -1, NULL);
 }
 
 /*
@@ -295,7 +295,7 @@ return_integer_data (CSS_CONN_ENTRY * conn, unsigned short request_id)
   int size;
   int *buffer = NULL;
 
-  if (css_receive_data (conn, request_id, (char **) &buffer, &size, -1) == NO_ERRORS)
+  if (css_receive_data (conn, request_id, (char **) &buffer, &size, -1, NULL) == NO_ERRORS)
     {
       if (size == sizeof (int))
 	{

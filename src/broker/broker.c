@@ -1957,6 +1957,7 @@ get_server_state_from_master (CSS_CONN_ENTRY * conn, const char *db_name)
   int server_state;
   int buffer_size;
   int *buffer = NULL;
+  int count_available_bytes = 0;
 
   if (conn == NULL)
     {
@@ -1970,7 +1971,8 @@ get_server_state_from_master (CSS_CONN_ENTRY * conn, const char *db_name)
     }
 
   /* timeout : 5000 milliseconds */
-  error = css_receive_data (conn, request_id, (char **) &buffer, &buffer_size, 5000);
+  error =
+    css_receive_data (conn, request_id, (char **) &buffer, &buffer_size, 5000, NULL /* &count_available_bytes */);
   if (error == NO_ERRORS)
     {
       if (buffer_size == sizeof (int))

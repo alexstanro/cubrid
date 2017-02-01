@@ -37,7 +37,8 @@ extern void css_free_conn (CSS_CONN_ENTRY * conn);
 extern CSS_CONN_ENTRY *css_connect_to_master_server (int master_port_id, const char *server_name, int name_length);
 
 extern CSS_CONN_ENTRY *css_find_exception_conn (void);
-extern int css_receive_error (CSS_CONN_ENTRY * conn, unsigned short req_id, char **buffer, int *buffer_size);
+extern int css_receive_error (CSS_CONN_ENTRY * conn, unsigned short req_id, char **buffer, int *buffer_size,
+			      int *p_count_available_bytes);
 
 extern CSS_CONN_ENTRY *css_connect_to_cubrid_server (char *host_name, char *server_name);
 extern CSS_CONN_ENTRY *css_connect_to_master_for_info (const char *host_name, int port_id, unsigned short *rid);
@@ -45,7 +46,8 @@ extern CSS_CONN_ENTRY *css_connect_to_master_timeout (const char *host_name, int
 						      unsigned short *rid);
 extern bool css_does_master_exist (int port_id);
 
-extern int css_receive_data (CSS_CONN_ENTRY * conn, unsigned short rid, char **buffer, int *size, int timeout);
+extern int css_receive_data (CSS_CONN_ENTRY * conn, unsigned short rid, char **buffer, int *size, int timeout,
+			     int *p_count_available_bytes);
 extern int css_receive_request (CSS_CONN_ENTRY * conn, unsigned short *rid, int *request, int *arg_buffer_size);
 extern int css_send_close_request (CSS_CONN_ENTRY * conn);
 

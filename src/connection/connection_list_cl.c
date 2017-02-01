@@ -351,8 +351,9 @@ css_recv_and_queue_packet (CSS_CONN_ENTRY * conn, unsigned short request_id, cha
 			   CSS_QUEUE_ENTRY ** queue_p)
 {
   int rc;
+  int count_available_bytes = 0;	/* TO DO - parameter */
 
-  rc = css_net_recv (conn->fd, buffer, &size, -1, false);
+  rc = css_net_recv (conn->fd, buffer, &size, -1, NULL /* &count_available_bytes */ );
   if (rc == NO_ERRORS || rc == RECORD_TRUNCATED)
     {
       if (!css_is_request_aborted (conn, request_id))
@@ -397,7 +398,7 @@ static void
 css_queue_data_packet (CSS_CONN_ENTRY * conn, unsigned short request_id, NET_HEADER * header)
 {
   char *buffer;
-  int size;
+  int size, count_available_bytes = 0;
 
   size = ntohl (header->buffer_size);
   buffer = css_return_data_buffer (conn, request_id, &size);
@@ -411,7 +412,7 @@ css_queue_data_packet (CSS_CONN_ENTRY * conn, unsigned short request_id, NET_HEA
     }
   else
     {
-      css_read_remaining_bytes (conn->fd, sizeof (int) + size);
+      css_read_remaining_bytes (conn->fd, sizeof (int) + size, NULL /* &count_available_bytes */ );
       css_queue_unexpected_data_packet (conn, request_id, NULL, 0, CANT_ALLOC_BUFFER);
     }
 }
@@ -448,7 +449,7 @@ static void
 css_queue_error_packet (CSS_CONN_ENTRY * conn, unsigned short request_id, NET_HEADER * header)
 {
   char *buffer;
-  int size;
+  int size, count_available_bytes = 0;	/* TO DO - parameter ? */
 
   size = ntohl (header->buffer_size);
   buffer = (char *) malloc (size);
@@ -462,7 +463,7 @@ css_queue_error_packet (CSS_CONN_ENTRY * conn, unsigned short request_id, NET_HE
     }
   else
     {
-      css_read_remaining_bytes (conn->fd, sizeof (int) + size);
+      css_read_remaining_bytes (conn->fd, sizeof (int) + size, NULL /* &count_available_bytes */ );
       css_queue_unexpected_error_packet (conn, request_id, NULL, 0, CANT_ALLOC_BUFFER);
     }
 }

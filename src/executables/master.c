@@ -337,7 +337,7 @@ css_accept_new_request (CSS_CONN_ENTRY * conn, unsigned short rid, char *server_
   datagram = NULL;
   datagram_length = 0;
   css_accept_server_request (conn, SERVER_REQUEST_ACCEPTED);
-  if (css_receive_data (conn, rid, &datagram, &datagram_length, -1) == NO_ERRORS)
+  if (css_receive_data (conn, rid, &datagram, &datagram_length, -1, NULL) == NO_ERRORS)
     {
       if (datagram != NULL && css_tcp_master_datagram (datagram, &server_fd))
 	{
@@ -406,7 +406,7 @@ css_accept_old_request (CSS_CONN_ENTRY * conn, unsigned short rid, SOCKET_QUEUE_
   datagram = NULL;
   datagram_length = 0;
   css_accept_server_request (conn, SERVER_REQUEST_ACCEPTED);
-  if (css_receive_data (conn, rid, &datagram, &datagram_length, -1) == NO_ERRORS)
+  if (css_receive_data (conn, rid, &datagram, &datagram_length, -1, NULL) == NO_ERRORS)
     {
       if (datagram != NULL && css_tcp_master_datagram (datagram, &server_fd))
 	{
@@ -447,7 +447,7 @@ css_register_new_server (CSS_CONN_ENTRY * conn, unsigned short rid)
   SOCKET_QUEUE_ENTRY *entry;
 
   /* read server name */
-  if (css_receive_data (conn, rid, &server_name, &name_length, -1) == NO_ERRORS)
+  if (css_receive_data (conn, rid, &server_name, &name_length, -1, NULL) == NO_ERRORS)
     {
       entry = css_return_entry_of_server (server_name, css_Master_socket_anchor);
       if (entry != NULL)
@@ -510,7 +510,7 @@ css_register_new_server2 (CSS_CONN_ENTRY * conn, unsigned short rid)
   int server_name_length, length;
 
   /* read server name */
-  if (css_receive_data (conn, rid, &server_name, &name_length, -1) == NO_ERRORS && server_name != NULL)
+  if (css_receive_data (conn, rid, &server_name, &name_length, -1, NULL) == NO_ERRORS && server_name != NULL)
     {
       entry = css_return_entry_of_server (server_name, css_Master_socket_anchor);
       if (entry != NULL)
@@ -535,7 +535,7 @@ css_register_new_server2 (CSS_CONN_ENTRY * conn, unsigned short rid)
 	  /* accept but make it send us a port id */
 	  css_accept_server_request (conn, SERVER_REQUEST_ACCEPTED_NEW);
 	  name_length = sizeof (buffer);
-	  if (css_net_recv (conn->fd, (char *) &buffer, &name_length, -1, false) == NO_ERRORS)
+	  if (css_net_recv (conn->fd, (char *) &buffer, &name_length, -1, NULL) == NO_ERRORS)
 	    {
 #if defined(DEBUG)
 	      css_Active_server_count++;
@@ -641,7 +641,7 @@ css_send_to_existing_server (CSS_CONN_ENTRY * conn, unsigned short rid)
   int name_length, buffer;
 
   name_length = 1024;
-  if (css_receive_data (conn, rid, &server_name, &name_length, -1) == NO_ERRORS && server_name != NULL)
+  if (css_receive_data (conn, rid, &server_name, &name_length, -1, NULL) == NO_ERRORS && server_name != NULL)
     {
       temp = css_return_entry_of_server (server_name, css_Master_socket_anchor);
       if (temp != NULL

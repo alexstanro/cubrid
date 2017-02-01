@@ -1262,6 +1262,7 @@ css_process_new_connection_request (void)
   unsigned short rid;
   char *buffer[1024];
   int length = 1024, r;
+  int count_available_bytes = 0;
 
   NET_HEADER header = { 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 
@@ -1278,7 +1279,7 @@ css_process_new_connection_request (void)
 	  r = rmutex_initialize (&new_conn.rmutex, RMUTEX_NAME_TEMP_CONN_ENTRY);
 	  assert (r == NO_ERROR);
 
-	  rc = css_read_header (&new_conn, &header, false);
+	  rc = css_read_header (&new_conn, &header, NULL /* &count_available_bytes */ );
 	  buffer_size = rid = 0;
 
 	  reason = htonl (SERVER_INACCESSIBLE_IP);
@@ -1308,7 +1309,7 @@ css_process_new_connection_request (void)
 	  r = rmutex_initialize (&new_conn.rmutex, RMUTEX_NAME_TEMP_CONN_ENTRY);
 	  assert (r == NO_ERROR);
 
-	  rc = css_read_header (&new_conn, &header, false);
+	  rc = css_read_header (&new_conn, &header, NULL /* &count_available_bytes */ );
 	  buffer_size = rid = 0;
 	  er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_CSS_CLIENTS_EXCEEDED, 1, NUM_NORMAL_TRANS);
 	  reason = htonl (SERVER_CLIENTS_EXCEEDED);
@@ -1334,7 +1335,7 @@ css_process_new_connection_request (void)
 	      break;
 	    }
 
-	  rc = css_read_header (conn, &header, false);
+	  rc = css_read_header (conn, &header, NULL /* &count_available_bytes */ );
 	  if (rc == NO_ERRORS)
 	    {
 	      rid = (unsigned short) ntohl (header.request_id);
@@ -1450,6 +1451,7 @@ css_connection_handler_thread (THREAD_ENTRY * thread_p, CSS_CONN_ENTRY * conn)
   int prefetchlogdb_max_thread_count = 0;
   SOCKET fd;
   struct pollfd po[1] = { {0, 0, 0} };
+  int count_available_bytes = -1;
 
   if (thread_p == NULL)
     {
@@ -1481,10 +1483,18 @@ css_connection_handler_thread (THREAD_ENTRY * thread_p, CSS_CONN_ENTRY * conn)
 	  break;
 	}
 
-      po[0].fd = fd;
-      po[0].events = POLLIN;
-      po[0].revents = 0;
-      n = poll (po, 1, poll_timeout);
+      if (count_available_bytes <= 0)
+	{
+	  po[0].fd = fd;
+	  po[0].events = POLLIN;
+	  po[0].revents = 0;
+	  n = poll (po, 1, poll_timeout);
+	}
+      else
+	{
+	  n = 1;
+	}
+
       if (n == 0)
 	{
 	  if (num_loop < max_num_loop)
@@ -1535,14 +1545,22 @@ css_connection_handler_thread (THREAD_ENTRY * thread_p, CSS_CONN_ENTRY * conn)
 	{
 	  num_loop = 0;
 
-	  if (po[0].revents & POLLERR || po[0].revents & POLLHUP)
+	  if (count_available_bytes <= 0)
 	    {
-	      status = ERROR_ON_READ;
-	      break;
+	      if (po[0].revents & POLLERR || po[0].revents & POLLHUP)
+		{
+		  status = ERROR_ON_READ;
+		  break;
+		}
+	      count_available_bytes = -1;
 	    }
 
-	  /* read command/data/etc request from socket, and enqueue it to appr. queue */
-	  status = css_read_and_queue (conn, &type, true);
+	  if (count_available_bytes == 0)
+	    {
+	      count_available_bytes = -1;
+	    }
+
+	  status = css_read_and_queue (conn, &type, &count_available_bytes);
 	  if (status != NO_ERRORS)
 	    {
 	      er_log_debug (ARG_FILE_LINE, "css_connection_handler_thread: " "css_read_and_queue() error\n");
