@@ -98,7 +98,8 @@ static void css_close_conn (CSS_CONN_ENTRY * conn);
 static void css_dealloc_conn (CSS_CONN_ENTRY * conn);
 
 static int css_read_header (CSS_CONN_ENTRY * conn, NET_HEADER * local_header, int *p_count_available_bytes);
-static int css_read_one_request (CSS_CONN_ENTRY * conn, unsigned short *rid, int *request, int *buffer_size);
+static int css_read_one_request (CSS_CONN_ENTRY * conn, unsigned short *rid, int *request, int *buffer_size,
+				 int *p_count_available_bytes);
 static CSS_CONN_ENTRY *css_common_connect (const char *host_name, CSS_CONN_ENTRY * conn, int connect_type,
 					   const char *server_name, int server_name_length, int port, int timeout,
 					   unsigned short *rid, bool send_magic);
@@ -401,7 +402,8 @@ css_read_header (CSS_CONN_ENTRY * conn, NET_HEADER * local_header, int *p_count_
  *       is available.
  */
 static int
-css_read_one_request (CSS_CONN_ENTRY * conn, unsigned short *rid, int *request, int *buffer_size)
+css_read_one_request (CSS_CONN_ENTRY * conn, unsigned short *rid, int *request, int *buffer_size,
+		      int *p_count_available_bytes)
 {
   int rc;
   int type;
@@ -417,7 +419,7 @@ css_read_one_request (CSS_CONN_ENTRY * conn, unsigned short *rid, int *request, 
       return NO_ERRORS;
     }
 
-  rc = css_read_header (conn, &local_header, false);
+  rc = css_read_header (conn, &local_header, p_count_available_bytes);
   if (rc == NO_ERRORS)
     {
       *rid = (unsigned short) ntohl (local_header.request_id);
@@ -431,7 +433,7 @@ css_read_one_request (CSS_CONN_ENTRY * conn, unsigned short *rid, int *request, 
 	}
       else
 	{
-	  css_queue_unexpected_packet (type, conn, *rid, &local_header, sizeof (NET_HEADER));
+	  css_queue_unexpected_packet (type, conn, *rid, &local_header, sizeof (NET_HEADER), p_count_available_bytes);
 	  rc = WRONG_PACKET_TYPE;
 	}
     }
@@ -452,13 +454,14 @@ css_read_one_request (CSS_CONN_ENTRY * conn, unsigned short *rid, int *request, 
  *   buffer_size(out):
  */
 int
-css_receive_request (CSS_CONN_ENTRY * conn, unsigned short *rid, int *request, int *buffer_size)
+css_receive_request (CSS_CONN_ENTRY * conn, unsigned short *rid, int *request, int *buffer_size,
+		     int *p_count_available_bytes)
 {
   int rc;
 
   do
     {
-      rc = css_read_one_request (conn, rid, request, buffer_size);
+      rc = css_read_one_request (conn, rid, request, buffer_size, p_count_available_bytes);
     }
   while (rc == WRONG_PACKET_TYPE);
 
@@ -576,7 +579,7 @@ begin:
 	    }
 #endif /* CS_MODE */
 
-	  css_queue_unexpected_packet (type, conn, rid, &header, ntohl (header.buffer_size));
+	  css_queue_unexpected_packet (type, conn, rid, &header, ntohl (header.buffer_size), p_count_available_bytes);
 	  goto begin;
 	}
     }
@@ -677,7 +680,7 @@ begin:
 	}
       else
 	{
-	  css_queue_unexpected_packet (type, conn, rid, &header, ntohl (header.buffer_size));
+	  css_queue_unexpected_packet (type, conn, rid, &header, ntohl (header.buffer_size), p_count_available_bytes);
 	  goto begin;
 	}
     }
@@ -799,8 +802,7 @@ css_server_connect_part_two (char *host_name, CSS_CONN_ENTRY * conn, int port_id
     {
       /* now ask for a reply from the server */
       css_queue_user_data_buffer (conn, *rid, sizeof (int), (char *) &reason);
-      if (css_receive_data (conn, *rid, &buffer, &buffer_size, timeout * 1000, NULL /* &count_available_bytes */ ) ==
-	  NO_ERRORS)
+      if (css_receive_data (conn, *rid, &buffer, &buffer_size, timeout * 1000, &count_available_bytes) == NO_ERRORS)
 	{
 	  if (buffer_size == sizeof (int) && buffer == (char *) &reason)
 	    {
@@ -1016,7 +1018,7 @@ css_connect_to_cubrid_server (char *host_name, char *server_name)
 
   css_queue_user_data_buffer (conn, rid, sizeof (int), reason_buffer);
 
-  css_err_code = css_receive_data (conn, rid, &buffer, &size, timeout, NULL /* &count_available_bytes */ );
+  css_err_code = css_receive_data (conn, rid, &buffer, &size, timeout, &count_available_bytes);
   if (css_err_code != NO_ERRORS)
     {
       goto error_receive_data;
@@ -1056,7 +1058,7 @@ css_connect_to_cubrid_server (char *host_name, char *server_name)
       /* new style of connection protocol, get the server port id */
       css_queue_user_data_buffer (conn, rid, sizeof (int), reason_buffer);
 
-      css_err_code = css_receive_data (conn, rid, &buffer, &size, timeout, NULL /* &count_available_bytes */ );
+      css_err_code = css_receive_data (conn, rid, &buffer, &size, timeout, &count_available_bytes);
       if (css_err_code != NO_ERRORS)
 	{
 	  goto error_receive_data;
@@ -1082,7 +1084,7 @@ css_connect_to_cubrid_server (char *host_name, char *server_name)
     case SERVER_INACCESSIBLE_IP:
       {
 	error_area = NULL;
-	if (css_receive_error (conn, rid, &error_area, &error_length, NULL /* &count_available_bytes */ ))
+	if (css_receive_error (conn, rid, &error_area, &error_length, &count_available_bytes))
 	  {
 	    if (error_area != NULL)
 	      {

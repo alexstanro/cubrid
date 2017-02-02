@@ -747,7 +747,7 @@ css_process_new_connection (SOCKET fd)
       return;
     }
 
-  if (css_receive_request (conn, &rid, &function_code, &buffer_size) == NO_ERRORS)
+  if (css_receive_request (conn, &rid, &function_code, &buffer_size, NULL) == NO_ERRORS)
     {
       switch (function_code)
 	{

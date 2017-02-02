@@ -1971,8 +1971,7 @@ get_server_state_from_master (CSS_CONN_ENTRY * conn, const char *db_name)
     }
 
   /* timeout : 5000 milliseconds */
-  error =
-    css_receive_data (conn, request_id, (char **) &buffer, &buffer_size, 5000, NULL /* &count_available_bytes */);
+  error = css_receive_data (conn, request_id, (char **) &buffer, &buffer_size, 5000, &count_available_bytes);
   if (error == NO_ERRORS)
     {
       if (buffer_size == sizeof (int))

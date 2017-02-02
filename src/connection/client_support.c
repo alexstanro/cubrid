@@ -598,7 +598,7 @@ css_receive_data_from_server_with_timeout (unsigned int eid, char **buffer, int 
     }
 
   rid = CSS_RID_FROM_EID (eid);
-  css_Errno = css_receive_data (entry->conn, rid, buffer, size, timeout, NULL /* &count_available_bytes */ );
+  css_Errno = css_receive_data (entry->conn, rid, buffer, size, timeout, &count_available_bytes);
   if (css_Errno == NO_ERRORS || css_Errno == SERVER_ABORTED)
     {
       css_test_for_server_errors (entry, eid);

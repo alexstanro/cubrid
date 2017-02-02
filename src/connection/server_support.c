@@ -1279,7 +1279,7 @@ css_process_new_connection_request (void)
 	  r = rmutex_initialize (&new_conn.rmutex, RMUTEX_NAME_TEMP_CONN_ENTRY);
 	  assert (r == NO_ERROR);
 
-	  rc = css_read_header (&new_conn, &header, NULL /* &count_available_bytes */ );
+	  rc = css_read_header (&new_conn, &header, &count_available_bytes);
 	  buffer_size = rid = 0;
 
 	  reason = htonl (SERVER_INACCESSIBLE_IP);
@@ -1309,7 +1309,7 @@ css_process_new_connection_request (void)
 	  r = rmutex_initialize (&new_conn.rmutex, RMUTEX_NAME_TEMP_CONN_ENTRY);
 	  assert (r == NO_ERROR);
 
-	  rc = css_read_header (&new_conn, &header, NULL /* &count_available_bytes */ );
+	  rc = css_read_header (&new_conn, &header, &count_available_bytes);
 	  buffer_size = rid = 0;
 	  er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_CSS_CLIENTS_EXCEEDED, 1, NUM_NORMAL_TRANS);
 	  reason = htonl (SERVER_CLIENTS_EXCEEDED);
@@ -1335,7 +1335,7 @@ css_process_new_connection_request (void)
 	      break;
 	    }
 
-	  rc = css_read_header (conn, &header, NULL /* &count_available_bytes */ );
+	  rc = css_read_header (conn, &header, &count_available_bytes);
 	  if (rc == NO_ERRORS)
 	    {
 	      rid = (unsigned short) ntohl (header.request_id);

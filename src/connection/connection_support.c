@@ -421,7 +421,7 @@ css_readn (SOCKET fd, char *ptr, int nbytes, int timeout, int *p_count_available
       if (count_available_bytes < 0)
 	{
 	  /* We don't know whether are available bytes. */
-	  if (ioctl (fd, FIONREAD, NULL /* &count_available_bytes */ ) < 0)
+	  if (ioctl (fd, FIONREAD, &count_available_bytes) < 0)
 	    {
 	      return -1;
 	    }
@@ -465,7 +465,7 @@ css_readn (SOCKET fd, char *ptr, int nbytes, int timeout, int *p_count_available
 	}
       else
 	{
-	  assert (ioctl (fd, FIONREAD, NULL /* &count_available_bytes */ ) >= 0);
+	  assert (ioctl (fd, FIONREAD, &count_available_bytes) >= 0);
 	}
 #else
       /* debugging purpose only */

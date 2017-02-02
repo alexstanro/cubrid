@@ -48,7 +48,8 @@ extern bool css_does_master_exist (int port_id);
 
 extern int css_receive_data (CSS_CONN_ENTRY * conn, unsigned short rid, char **buffer, int *size, int timeout,
 			     int *p_count_available_bytes);
-extern int css_receive_request (CSS_CONN_ENTRY * conn, unsigned short *rid, int *request, int *arg_buffer_size);
+extern int css_receive_request (CSS_CONN_ENTRY * conn, unsigned short *rid, int *request, int *arg_buffer_size,
+				int *p_count_available_bytes);
 extern int css_send_close_request (CSS_CONN_ENTRY * conn);
 
 extern int css_test_for_open_conn (CSS_CONN_ENTRY * conn);

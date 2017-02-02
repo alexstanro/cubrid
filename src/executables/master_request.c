@@ -505,7 +505,7 @@ css_process_kill_slave (CSS_CONN_ENTRY * conn, unsigned short request_id, char *
   int rc;
   int count_available_bytes = 0;
 
-  rc = css_receive_data (conn, request_id, &time_buffer, &time_size, -1, NULL /* &count_available_bytes */ );
+  rc = css_receive_data (conn, request_id, &time_buffer, &time_size, -1, &count_available_bytes);
   if (rc == NO_ERRORS && time_buffer != NULL)
     {
       timeout = ntohl ((int) *(int *) time_buffer);
@@ -1861,14 +1861,13 @@ css_process_info_request (CSS_CONN_ENTRY * conn)
   int request;
   unsigned short request_id;
   char *buffer = NULL;
-  int count_available_bytes = -1;
+  int count_available_bytes = 0;
 
-  rc = css_receive_request (conn, &request_id, &request, &buffer_size);
+  rc = css_receive_request (conn, &request_id, &request, &buffer_size, &count_available_bytes);
   if (rc == NO_ERRORS)
     {
       if (buffer_size
-	  && css_receive_data (conn, request_id, &buffer, &buffer_size, -1, NULL /* &count_available_bytes */ )
-	  != NO_ERRORS)
+	  && css_receive_data (conn, request_id, &buffer, &buffer_size, -1, &count_available_bytes) != NO_ERRORS)
 	{
 	  if (buffer != NULL)
 	    {
