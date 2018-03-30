@@ -151,6 +151,8 @@ static int rv;
 /* check whether the given volume is auxiliary volume */
 #define PGBUF_IS_AUXILIARY_VOLUME(volid) ((volid) < LOG_DBFIRST_VOLID ? true : false)
 
+extern MVCCID vacuum_Global_oldest_active_mvccid;
+
 /************************************************************************/
 /* Page buffer zones section                                            */
 /************************************************************************/
@@ -3130,6 +3132,11 @@ pgbuf_get_victim_candidates_from_lru (THREAD_ENTRY * thread_p, int check_count, 
       victim_flush_priority_this_lru = pgbuf_Pool.quota.lru_victim_flush_priority_per_lru[lru_idx];
       if (victim_flush_priority_this_lru <= 0)
 	{
+	  bufptr = pgbuf_Pool.buf_LRU_list[lru_idx].bottom;
+	  if (bufptr && pgbuf_bcb_is_dirty (bufptr))
+	    {
+	      perfmon_inc_stat (thread_p, PSTAT_PB_VICTIM_SKIP_LIST_LAST_DIRTY);
+	    }
 	  /* no target for this list. */
 	  continue;
 	}
@@ -3174,7 +3181,12 @@ pgbuf_get_victim_candidates_from_lru (THREAD_ENTRY * thread_p, int check_count, 
 		  else
 		    {
 		      pgbuf_bcb_mark_was_flushed (thread_p, bufptr);
+		      perfmon_inc_stat (thread_p, PSTAT_PB_VICTIM_SKIP_NON_DIRTY);
 		    }
+		}
+	      else
+		{
+		  perfmon_inc_stat (thread_p, PSTAT_PB_VICTIM_SKIP_NON_DIRTY);
 		}
 	    }
 #endif /* SERVER_MODE */
@@ -7484,6 +7496,19 @@ pgbuf_allocate_bcb (THREAD_ENTRY * thread_p, const VPID * src_vpid)
 		  high_priority = true;
 		  goto retry;
 		}
+
+	      if (pgbuf_bcb_is_to_vacuum (bufptr) && bufptr->iopage_buffer->iopage.prv.ptype == PAGE_HEAP)
+		{
+		  PAGE_PTR pgptr;
+		  CAST_BFPTR_TO_PGPTR (pgptr, bufptr);
+
+		  if ((heap_page_get_vacuum_status (thread_p, pgptr) != HEAP_PAGE_VACUUM_NONE)
+		      && (vacuum_Global_oldest_active_mvccid > heap_page_get_max_mvccid (thread_p, pgptr)))
+		    {
+		      perfmon_inc_stat (thread_p, PSTAT_PB_VICTIMIZED_VACUUMABLE_PAGES);
+		    }
+		}
+
 	      goto end;
 	    }
 
