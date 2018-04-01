@@ -3168,9 +3168,6 @@ pgbuf_get_victim_candidates_from_lru (THREAD_ENTRY * thread_p, int check_count, 
 	      if (thread_is_page_post_flush_thread_available ()
 		  && pgbuf_is_any_thread_waiting_for_direct_victim () && pgbuf_is_bcb_victimizable (bufptr, false))
 		{
-		  /* Temporary hack to avoid new flag for moment. */
-		  pgbuf_bcb_mark_is_flushing (thread_p, bufptr);
-
 		  if (lf_circular_queue_produce (pgbuf_Pool.flushed_bcbs, &bufptr))
 		    {
 		      /* assigned directly. don't try any other. */
@@ -14536,14 +14533,9 @@ pgbuf_assign_direct_victim (THREAD_ENTRY * thread_p, PGBUF_BCB * bcb, bool check
     {
       /* Move it from zone 3 into invalid list. Should be better to get the bcb from this list than searching in lru lists. */
 
-      pgbuf_bcb_mark_was_flushed (thread_p, bcb);
+      pgbuf_bcb_update_flags (thread_p, bcb, 0, PGBUF_BCB_TO_VACUUM_FLAG | PGBUF_BCB_FLUSHING_TO_DISK_FLAG);
 
       pgbuf_lru_remove_bcb (thread_p, bcb);
-
-      if (pgbuf_bcb_is_to_vacuum (bcb))
-	{
-	  pgbuf_bcb_update_flags (thread_p, bcb, 0, PGBUF_BCB_TO_VACUUM_FLAG);
-	}
 
       /* a safe victim */
       if (pgbuf_delete_from_hash_chain (thread_p, bcb) != NO_ERROR)
