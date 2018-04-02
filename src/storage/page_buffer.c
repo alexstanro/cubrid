@@ -9221,7 +9221,7 @@ pgbuf_lru_fall_bcb_to_zone_3 (THREAD_ENTRY * thread_p, PGBUF_BCB * bcb, PGBUF_LR
 	  /* we first need mutex on bcb. however, we'd normally first get mutex on bcb and then on list. since we don't
 	   * want to over complicate things, just try a conditional lock on mutex. if it fails, we'll just give up
 	   * assigning the bcb directly as victim */
-#if 0
+
 	  if (PGBUF_BCB_TRYLOCK (bcb) == 0)
 	    {
 	      VPID vpid_copy = bcb->vpid;
@@ -9248,7 +9248,6 @@ pgbuf_lru_fall_bcb_to_zone_3 (THREAD_ENTRY * thread_p, PGBUF_BCB * bcb, PGBUF_LR
 	      /* don't try too hard. it will be victimized eventually. */
 	      /* fall through */
 	    }
-#endif
 	}
     }
   /* not assigned directly */
