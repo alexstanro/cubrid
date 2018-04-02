@@ -6132,7 +6132,7 @@ pgbuf_unlatch_bcb_upon_unfix (THREAD_ENTRY * thread_p, PGBUF_BCB * bufptr, int h
 	    case PGBUF_LRU_3_ZONE:
 	      if (PGBUF_THREAD_SHOULD_IGNORE_UNFIX (thread_p))
 		{
-		  if (!pgbuf_bcb_avoid_victim (bufptr) && pgbuf_assign_direct_victim (thread_p, bufptr, false))
+		  if (!pgbuf_bcb_avoid_victim (bufptr) && pgbuf_assign_direct_victim (thread_p, bufptr, true))
 		    {
 		      /* assigned victim directly */
 		      if (perfmon_is_perf_tracking_and_active (PERFMON_ACTIVE_PB_VICTIMIZATION))
@@ -8729,7 +8729,7 @@ pgbuf_panic_assign_direct_victims_from_lru (THREAD_ENTRY * thread_p, PGBUF_LRU_L
 	  PGBUF_BCB_UNLOCK (bcb);
 	  continue;
 	}
-      if (!pgbuf_assign_direct_victim (thread_p, bcb, false))
+      if (!pgbuf_assign_direct_victim (thread_p, bcb, true))
 	{
 	  /* no more waiting threads */
 	  PGBUF_BCB_UNLOCK (bcb);
@@ -9421,7 +9421,7 @@ pgbuf_lru_add_new_bcb_to_bottom (THREAD_ENTRY * thread_p, PGBUF_BCB * bcb, int l
   /* this is not meant for changes in this list */
   assert (!PGBUF_IS_BCB_IN_LRU (bcb));
 
-  if (pgbuf_is_bcb_victimizable (bcb, true) && pgbuf_assign_direct_victim (thread_p, bcb, false))
+  if (pgbuf_is_bcb_victimizable (bcb, true) && pgbuf_assign_direct_victim (thread_p, bcb, true))
     {
       /* assigned directly */
       /* TODO: add stat. this is actually not used for now. */
@@ -14543,6 +14543,8 @@ pgbuf_assign_direct_victim (THREAD_ENTRY * thread_p, PGBUF_BCB * bcb, bool check
 	}
 
       pgbuf_put_bcb_into_invalid_list (thread_p, bcb, false);
+
+      return true;
     }
 #endif /* SERVER_MODE */
 
