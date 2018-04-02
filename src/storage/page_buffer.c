@@ -3177,7 +3177,6 @@ pgbuf_get_victim_candidates_from_lru (THREAD_ENTRY * thread_p, int check_count, 
 		    }
 		  else
 		    {
-		      pgbuf_bcb_mark_was_flushed (thread_p, bufptr);
 		      perfmon_inc_stat (thread_p, PSTAT_PB_VICTIM_SKIP_NON_DIRTY);
 		    }
 		}
