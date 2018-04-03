@@ -744,8 +744,8 @@ struct pgbuf_direct_victim
 #define PGBUF_FLUSHED_BCBS_BUFFER_SIZE (8 * 1024)	/* 8k */
 #endif /* SERVER_MODE */
 
-#define PGBUF_INVALID_LIST_MAX_SIZE 3000
-#define PGBUF_INVALID_LIST_MIN_SIZE 2000
+#define PGBUF_INVALID_LIST_MAX_SIZE 6000
+#define PGBUF_INVALID_LIST_MIN_SIZE 5000
 
 /* The buffer Pool */
 struct pgbuf_buffer_pool
