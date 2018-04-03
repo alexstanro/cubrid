@@ -744,8 +744,8 @@ struct pgbuf_direct_victim
 #define PGBUF_FLUSHED_BCBS_BUFFER_SIZE (8 * 1024)	/* 8k */
 #endif /* SERVER_MODE */
 
-#define PGBUF_INVALID_LIST_MAX_SIZE 6000
-#define PGBUF_INVALID_LIST_MIN_SIZE 5000
+#define PGBUF_INVALID_LIST_MAX_SIZE 3000
+#define PGBUF_INVALID_LIST_MIN_SIZE 2000
 
 /* The buffer Pool */
 struct pgbuf_buffer_pool
@@ -9225,7 +9225,7 @@ pgbuf_lru_fall_bcb_to_zone_3 (THREAD_ENTRY * thread_p, PGBUF_BCB * bcb, PGBUF_LR
 	  if (PGBUF_BCB_TRYLOCK (bcb) == 0)
 	    {
 	      VPID vpid_copy = bcb->vpid;
-	      if (pgbuf_is_bcb_victimizable (bcb, true) && pgbuf_assign_direct_victim (thread_p, bcb, false))
+	      if (pgbuf_is_bcb_victimizable (bcb, true) && pgbuf_assign_direct_victim (thread_p, bcb, true))
 		{
 		  if (perfmon_is_perf_tracking_and_active (PERFMON_ACTIVE_PB_VICTIMIZATION))
 		    {
