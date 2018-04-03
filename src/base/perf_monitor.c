@@ -468,12 +468,6 @@ PSTAT_METADATA pstat_Metadata[] = {
   PSTAT_METADATA_INIT_SINGLE_ACC (PSTAT_PB_VICTIM_ASSIGN_DIRECT_ADJUST, "Num_victim_assign_direct_adjust_lru"),
   PSTAT_METADATA_INIT_SINGLE_ACC (PSTAT_PB_VICTIM_ASSIGN_DIRECT_ADJUST_TO_VACUUM,
 				  "Num_victim_assign_direct_adjust_lru_to_vacuum"),
-  PSTAT_METADATA_INIT_SINGLE_ACC (PSTAT_PB_VICTIM_SKIP_NON_DIRTY,
-				  "Num_victim_skip_non_dirty"),
-  PSTAT_METADATA_INIT_SINGLE_ACC (PSTAT_PB_VICTIMIZED_VACUUMABLE_PAGES,
-				  "Num_victimized_vacuumable_pages"),
-  PSTAT_METADATA_INIT_SINGLE_ACC (PSTAT_PB_VICTIM_SKIP_LIST_LAST_DIRTY,
-				  "Num_victim_skip_list_last_dirty"),
   PSTAT_METADATA_INIT_SINGLE_ACC (PSTAT_PB_VICTIM_ASSIGN_DIRECT_SEARCH_FOR_FLUSH,
 				  "Num_victim_assign_direct_search_for_flush"),
   /* successful searches */
