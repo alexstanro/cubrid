@@ -690,6 +690,8 @@ struct pgbuf_page_monitor
 
   int *lru_hits;		/* Current hits in LRU1 per LRU */
   int *lru_activity;		/* Activity level per LRU */
+  int *lru_zone3_dirty_hits;	/* Current dirty hits in zone 3 per LRU */
+  int *lru_zone3_dirty_activity;	/* Current dirty hits activity in zone 3 per LRU */
 
   /* Overall counters */
   volatile int lru_shared_pgs_cnt;	/* count of BCBs in all shared LRUs */
@@ -1622,6 +1624,14 @@ pgbuf_finalize (void)
   if (pgbuf_Pool.monitor.lru_activity != NULL)
     {
       free_and_init (pgbuf_Pool.monitor.lru_activity);
+    }
+  if (pgbuf_Pool.monitor.lru_zone3_dirty_hits != NULL)
+    {
+      free_and_init (pgbuf_Pool.monitor.lru_zone3_dirty_hits);
+    }
+  if (pgbuf_Pool.monitor.lru_zone3_dirty_activity != NULL)
+    {
+      free_and_init (pgbuf_Pool.monitor.lru_zone3_dirty_activity);
     }
 
 #if defined (SERVER_MODE)
@@ -3127,6 +3137,11 @@ pgbuf_get_victim_candidates_from_lru (THREAD_ENTRY * thread_p, int check_count, 
       victim_flush_priority_this_lru = pgbuf_Pool.quota.lru_victim_flush_priority_per_lru[lru_idx];
       if (victim_flush_priority_this_lru <= 0)
 	{
+	  bufptr = pgbuf_Pool.buf_LRU_list[lru_idx].bottom;
+	  if (bufptr && pgbuf_bcb_is_dirty (bufptr))
+	    {
+	      perfmon_inc_stat (thread_p, PSTAT_PB_VICTIM_SKIP_LIST_LAST_DIRTY);
+	    }
 	  /* no target for this list. */
 	  continue;
 	}
@@ -3140,7 +3155,7 @@ pgbuf_get_victim_candidates_from_lru (THREAD_ENTRY * thread_p, int check_count, 
       (void) pthread_mutex_lock (&pgbuf_Pool.buf_LRU_list[lru_idx].mutex);
 
       for (bufptr = pgbuf_Pool.buf_LRU_list[lru_idx].bottom;
-	   bufptr != NULL && PGBUF_IS_BCB_IN_LRU_VICTIM_ZONE (bufptr) && i > 0; bufptr = bufptr->prev_BCB, i--)
+	   bufptr != NULL && PGBUF_IS_BCB_IN_LRU_VICTIM_ZONE (bufptr) && i > 0; bufptr = bufptr->prev_BCB)
 	{
 	  if (pgbuf_bcb_is_dirty (bufptr))
 	    {
@@ -3148,23 +3163,32 @@ pgbuf_get_victim_candidates_from_lru (THREAD_ENTRY * thread_p, int check_count, 
 	      pgbuf_Pool.victim_cand_list[victim_cand_count].bufptr = bufptr;
 	      pgbuf_Pool.victim_cand_list[victim_cand_count].vpid = bufptr->vpid;
 	      victim_cand_count++;
+	      i--;
 	    }
 #if defined (SERVER_MODE)
-	  else if (try_direct_assign && pgbuf_is_any_thread_waiting_for_direct_victim ()
-		   && pgbuf_is_bcb_victimizable (bufptr, false) && PGBUF_BCB_TRYLOCK (bufptr) == 0)
+	  else
 	    {
-	      if (pgbuf_is_bcb_victimizable (bufptr, true) && pgbuf_assign_direct_victim (thread_p, bufptr))
+	      assert_release (pgbuf_Pool.direct_victims.waiter_threads_high_priority != NULL
+			      && pgbuf_Pool.direct_victims.waiter_threads_low_priority != NULL
+			      && pgbuf_Pool.flushed_bcbs);
+
+	      perfmon_inc_stat (thread_p, PSTAT_PB_VICTIM_SKIP_NON_DIRTY);
+	      if (thread_is_page_post_flush_thread_available ()
+		  && pgbuf_is_any_thread_waiting_for_direct_victim ()
+		  && pgbuf_is_bcb_victimizable (bufptr, false)
+		  && lf_circular_queue_produce (pgbuf_Pool.flushed_bcbs, &bufptr))
 		{
 		  /* assigned directly. don't try any other. */
-		  try_direct_assign = false;
+		  thread_wakeup_page_post_flush_thread ();
 		  *assigned_directly = true;
 		  perfmon_inc_stat (thread_p, PSTAT_PB_VICTIM_ASSIGN_DIRECT_SEARCH_FOR_FLUSH);
 		}
-	      PGBUF_BCB_UNLOCK (bufptr);
 	    }
 #endif /* SERVER_MODE */
 	}
+
       pthread_mutex_unlock (&pgbuf_Pool.buf_LRU_list[lru_idx].mutex);
+      /* Dirty hits will be updated at flush. */
     }
 
   er_log_debug (ARG_FILE_LINE,
@@ -4283,6 +4307,7 @@ void
 pgbuf_set_dirty (THREAD_ENTRY * thread_p, PAGE_PTR pgptr, bool free_page)
 {
   PGBUF_BCB *bufptr;
+  PGBUF_ZONE zone;
 
   if (pgbuf_get_check_page_validation_level (PGBUF_DEBUG_PAGE_VALIDATION_ALL))
     {
@@ -4305,6 +4330,7 @@ pgbuf_set_dirty (THREAD_ENTRY * thread_p, PAGE_PTR pgptr, bool free_page)
 
   pgbuf_set_dirty_buffer_ptr (thread_p, bufptr);
 
+  zone = pgbuf_bcb_get_zone (bufptr);
   /* If free request is given, unfix the page. */
   if (free_page == FREE)
     {
@@ -13121,11 +13147,32 @@ pgbuf_initialize_page_monitor (void)
       goto exit;
     }
 
+  monitor->lru_zone3_dirty_hits = (int *) malloc (PGBUF_TOTAL_LRU_COUNT * sizeof (monitor->lru_zone3_dirty_hits[0]));
+  if (monitor->lru_zone3_dirty_hits == NULL)
+    {
+      error_status = ER_OUT_OF_VIRTUAL_MEMORY;
+      er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_OUT_OF_VIRTUAL_MEMORY,
+	      1, (PGBUF_TOTAL_LRU_COUNT * sizeof (monitor->lru_zone3_dirty_hits[0])));
+      goto exit;
+    }
+
+  monitor->lru_zone3_dirty_activity =
+    (int *) malloc (PGBUF_TOTAL_LRU_COUNT * sizeof (monitor->lru_zone3_dirty_activity[0]));
+  if (monitor->lru_zone3_dirty_activity == NULL)
+    {
+      error_status = ER_OUT_OF_VIRTUAL_MEMORY;
+      er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_OUT_OF_VIRTUAL_MEMORY,
+	      1, (PGBUF_TOTAL_LRU_COUNT * sizeof (monitor->lru_zone3_dirty_activity[0])));
+      goto exit;
+    }
+
   /* initialize the monitor data for each LRU */
   for (i = 0; i < PGBUF_TOTAL_LRU_COUNT; i++)
     {
       monitor->lru_hits[i] = 0;
       monitor->lru_activity[i] = 0;
+      monitor->lru_zone3_dirty_hits[i] = 0;
+      monitor->lru_zone3_dirty_activity[i] = 0;
     }
 
   monitor->lru_victim_req_cnt = 0;
@@ -13163,17 +13210,13 @@ exit:
 static void
 pgbuf_compute_lru_vict_target (float *lru_sum_flush_priority)
 {
-  int i;
-
-  float prv_quota;
-  float prv_real_ratio;
-  float diff;
+  int i, lru_shared_dirty_hits, lru_private_dirty_hits;
   float prv_flush_ratio;
   float shared_flush_ratio;
+  PGBUF_PAGE_MONITOR *monitor;
 
-  bool use_prv_size = false;
+  monitor = &pgbuf_Pool.monitor;
 
-  int total_prv_target = 0;
   int this_prv_target = 0;
 
   PGBUF_LRU_LIST *lru_list;
@@ -13182,62 +13225,30 @@ pgbuf_compute_lru_vict_target (float *lru_sum_flush_priority)
 
   *lru_sum_flush_priority = 0;
 
-  prv_quota = pgbuf_Pool.quota.private_pages_ratio;
-  assert (pgbuf_Pool.monitor.lru_shared_pgs_cnt >= 0
-	  && pgbuf_Pool.monitor.lru_shared_pgs_cnt <= pgbuf_Pool.num_buffers);
-
-  prv_real_ratio = 1.0f - ((float) pgbuf_Pool.monitor.lru_shared_pgs_cnt / pgbuf_Pool.num_buffers);
-  diff = prv_quota - prv_real_ratio;
-
-  prv_flush_ratio = prv_real_ratio * (1.0f - diff);
-  prv_flush_ratio = MIN (1.0f, prv_flush_ratio);
-
-  for (i = PGBUF_LRU_INDEX_FROM_PRIVATE (0); i < PGBUF_TOTAL_LRU_COUNT; i++)
+  lru_private_dirty_hits = 0;
+  lru_shared_dirty_hits = 0;
+  memcpy (monitor->lru_zone3_dirty_activity, monitor->lru_zone3_dirty_hits,
+	  PGBUF_TOTAL_LRU_COUNT * sizeof (monitor->lru_zone3_dirty_hits[0]));
+  for (i = 0; i < PGBUF_TOTAL_LRU_COUNT; i++)
     {
-      lru_list = PGBUF_GET_LRU_LIST (i);
-
-      /* note: we target especially over quota private lists or close to quota. we cannot target only over quota lists
-       * (I tried), because you may find yourself in the peculiar case where quota's are on par with list size, while
-       * shared are right below minimum desired size... and flush will not find anything.
-       */
-      this_prv_target = PGBUF_LRU_LIST_COUNT (lru_list) - (int) (lru_list->quota * 0.9);
-      this_prv_target = MIN (this_prv_target, lru_list->count_lru3);
-      if (this_prv_target > 0)
+      if (monitor->lru_zone3_dirty_activity[i] < 0)
 	{
-	  total_prv_target += this_prv_target;
-	}
-    }
-  if (total_prv_target == 0)
-    {
-      /* can we victimize from shared? */
-      if (pgbuf_Pool.monitor.lru_shared_pgs_cnt
-	  <= (int) (pgbuf_Pool.num_LRU_list * PGBUF_MIN_SHARED_LIST_ADJUST_SIZE
-		    * (pgbuf_Pool.ratio_lru1 + pgbuf_Pool.ratio_lru2)))
-	{
-	  /* we won't be able to victimize from shared. this is a backup hack, I don't like to rely on it. let's
-	   * find smarter ways to avoid the case. */
-	  /* right now, considering we target all bcb's beyond 90% of quota, but total_prv_target is 0, that means all
-	   * private bcb's must be less than 90% of buffer. that means shared bcb's have to be 10% or more of buffer.
-	   * PGBUF_MIN_SHARED_LIST_ADJUST_SIZE is currently set to 50, which is 5% to targeted 1k shared list size.
-	   * we shouldn't be here unless I messed up the calculus. */
-	  if (pgbuf_Pool.buf_invalid_list.invalid_cnt > 0)
-	    {
-	      /* This is not really an interesting case.
-	       * Probably both shared and private are small and most of buffers in invalid list.
-	       * We don't really need flush for the case, since BCB could be allocated from invalid list.
-	       */
-	      return;
-	    }
-
 	  assert (false);
-	  use_prv_size = true;
-	  prv_flush_ratio = 1.0f;
-	  /* we can compute the zone 3 total size (for privates, zones 1 & 2 are both set to minimum ratio). */
-	  total_prv_target =
-	    (int) ((pgbuf_Pool.num_buffers - pgbuf_Pool.monitor.lru_shared_pgs_cnt)
-		   * (1.0f - 2 * PGBUF_LRU_ZONE_MIN_RATIO));
+	  monitor->lru_zone3_dirty_activity[i] = 0;
+	}
+
+      if (PGBUF_IS_PRIVATE_LRU_INDEX (i))
+	{
+	  /* collect to total private hits */
+	  lru_private_dirty_hits += monitor->lru_zone3_dirty_activity[i];
+	}
+      else
+	{
+	  /* collect to total shared hits */
+	  lru_shared_dirty_hits += monitor->lru_zone3_dirty_activity[i];
 	}
     }
+  prv_flush_ratio = (float) lru_private_dirty_hits / ((float) lru_private_dirty_hits + (float) lru_shared_dirty_hits);
   shared_flush_ratio = 1.0f - prv_flush_ratio;
 
   for (i = 0; i < PGBUF_TOTAL_LRU_COUNT; i++)
@@ -13245,7 +13256,23 @@ pgbuf_compute_lru_vict_target (float *lru_sum_flush_priority)
       lru_list = PGBUF_GET_LRU_LIST (i);
       if (PGBUF_IS_SHARED_LRU_INDEX (i))
 	{
-	  pgbuf_Pool.quota.lru_victim_flush_priority_per_lru[i] = shared_flush_ratio / (float) PGBUF_SHARED_LRU_COUNT;
+	  if (shared_flush_ratio == 0.0f)
+	    {
+	      pgbuf_Pool.quota.lru_victim_flush_priority_per_lru[i] = 0.0f;
+	    }
+	  else
+	    {
+	      if (pgbuf_Pool.monitor.lru_zone3_dirty_activity[i] > 0)
+		{
+		  pgbuf_Pool.quota.lru_victim_flush_priority_per_lru[i] =
+		    shared_flush_ratio *
+		    (((float) pgbuf_Pool.monitor.lru_zone3_dirty_activity[i] / (float) lru_shared_dirty_hits));
+		}
+	      else
+		{
+		  pgbuf_Pool.quota.lru_victim_flush_priority_per_lru[i] = 0.0f;
+		}
+	    }
 	}
       else if (PGBUF_IS_PRIVATE_LRU_INDEX (i))
 	{
@@ -13255,21 +13282,11 @@ pgbuf_compute_lru_vict_target (float *lru_sum_flush_priority)
 	    }
 	  else
 	    {
-	      if (use_prv_size)
-		{
-		  /* back plan: use zone 3 size instead of computed target based on quota. */
-		  this_prv_target = lru_list->count_lru3;
-		}
-	      else
-		{
-		  /* use bcb's over 90% of quota as flush target */
-		  this_prv_target = PGBUF_LRU_LIST_COUNT (lru_list) - (int) (lru_list->quota * 0.9);
-		  this_prv_target = MIN (this_prv_target, lru_list->count_lru3);
-		}
-	      if (this_prv_target > 0)
+	      if ((float) pgbuf_Pool.monitor.lru_zone3_dirty_activity[i] > 0)
 		{
 		  pgbuf_Pool.quota.lru_victim_flush_priority_per_lru[i] =
-		    prv_flush_ratio * ((float) this_prv_target / (float) total_prv_target);
+		    prv_flush_ratio * ((float) pgbuf_Pool.monitor.lru_zone3_dirty_activity[i] /
+				       (float) lru_private_dirty_hits);
 		}
 	      else
 		{
@@ -14769,8 +14786,7 @@ pgbuf_lru_advance_victim_hint (THREAD_ENTRY * thread_p, PGBUF_LRU_LIST * lru_lis
 STATIC_INLINE void
 pgbuf_bcb_update_flags (THREAD_ENTRY * thread_p, PGBUF_BCB * bcb, int set_flags, int clear_flags)
 {
-  int old_flags;
-  int new_flags;
+  int old_flags, new_flags, count_lru3, lru_zone3_dirty_hits, lru_index;
   bool old_dirty, new_dirty;
 
   /* sanity checks */
@@ -14826,11 +14842,29 @@ pgbuf_bcb_update_flags (THREAD_ENTRY * thread_p, PGBUF_BCB * bcb, int set_flags,
     {
       /* cleared dirty flag. */
       ATOMIC_INC_64 (&pgbuf_Pool.monitor.dirties_cnt, -1);
+      if (PGBUF_GET_ZONE (old_flags) == PGBUF_LRU_3_ZONE)
+	{
+	  assert (PGBUF_GET_ZONE (new_flags) == PGBUF_LRU_3_ZONE);
+	  lru_index = PGBUF_GET_LRU_INDEX (bcb->flags);
+	  count_lru3 = pgbuf_lru_list_from_bcb (bcb)->count_lru3;
+	  lru_zone3_dirty_hits = ATOMIC_INC_32 (&pgbuf_Pool.monitor.lru_zone3_dirty_hits[lru_index], -1);
+	  //assert (lru_zone3_dirty_hits >= 0);
+	  //assert (lru_zone3_dirty_hits < (pgbuf_lru_list_from_bcb(bcb)->count_lru3));
+	}
     }
   else if (!old_dirty && new_dirty)
     {
       /* added dirty flag */
       ATOMIC_INC_64 (&pgbuf_Pool.monitor.dirties_cnt, 1);
+      if (PGBUF_GET_ZONE (new_flags) == PGBUF_LRU_3_ZONE)
+	{
+	  assert (PGBUF_GET_ZONE (old_flags) == PGBUF_LRU_3_ZONE);
+	  lru_index = PGBUF_GET_LRU_INDEX (bcb->flags);
+	  count_lru3 = pgbuf_lru_list_from_bcb (bcb)->count_lru3;
+	  lru_zone3_dirty_hits = ATOMIC_INC_32 (&pgbuf_Pool.monitor.lru_zone3_dirty_hits[lru_index], 1);
+	  //assert(lru_zone3_dirty_hits > 0);
+	  //assert(lru_zone3_dirty_hits <= count_lru3);
+	}
     }
 
   assert (pgbuf_Pool.monitor.dirties_cnt >= 0 && pgbuf_Pool.monitor.dirties_cnt <= pgbuf_Pool.num_buffers);
@@ -14869,6 +14903,7 @@ pgbuf_bcb_change_zone (THREAD_ENTRY * thread_p, PGBUF_BCB * bcb, int new_lru_idx
 {
   int old_flags;
   int new_flags;
+  int lru_zone3_dirty_hits, count_lru3;
   int new_zone_idx = PGBUF_MAKE_ZONE (new_lru_idx, new_zone);
   bool is_valid_victim_candidate;
   PGBUF_LRU_LIST *lru_list;
@@ -14922,6 +14957,14 @@ pgbuf_bcb_change_zone (THREAD_ENTRY * thread_p, PGBUF_BCB * bcb, int new_lru_idx
 	  break;
 	case PGBUF_LRU_3_ZONE:
 	  lru_list->count_lru3--;
+	  if (pgbuf_bcb_is_dirty (bcb))
+	    {
+	      assert (PGBUF_GET_ZONE (new_flags) != PGBUF_LRU_3_ZONE);
+	      count_lru3 = lru_list->count_lru3;
+	      lru_zone3_dirty_hits = ATOMIC_INC_32 (&pgbuf_Pool.monitor.lru_zone3_dirty_hits[lru_idx], -1);
+	      //assert (lru_zone3_dirty_hits >= 0);
+	      //assert (lru_zone3_dirty_hits <= count_lru3);
+	    }
 	  if (is_valid_victim_candidate)
 	    {
 	      /* bcb was a valid victim and in the zone that could be victimized. update victim counter & hint */
@@ -14951,7 +14994,14 @@ pgbuf_bcb_change_zone (THREAD_ENTRY * thread_p, PGBUF_BCB * bcb, int new_lru_idx
 	  lru_list->count_lru2++;
 	  break;
 	case PGBUF_LRU_3_ZONE:
-	  lru_list->count_lru3++;
+	  count_lru3 = ATOMIC_INC_32 (&lru_list->count_lru3, 1);
+	  if (pgbuf_bcb_is_dirty (bcb))
+	    {
+	      assert (PGBUF_GET_ZONE (old_flags) != PGBUF_LRU_3_ZONE);
+	      lru_zone3_dirty_hits = ATOMIC_INC_32 (&pgbuf_Pool.monitor.lru_zone3_dirty_hits[new_lru_idx], 1);
+	      //assert (lru_zone3_dirty_hits > 0);
+	      //assert (lru_zone3_dirty_hits <= count_lru3);
+	    }
 	  if (is_valid_victim_candidate)
 	    {
 	      pgbuf_lru_add_victim_candidate (thread_p, lru_list, bcb);
@@ -15014,6 +15064,9 @@ pgbuf_bcb_set_dirty (THREAD_ENTRY * thread_p, PGBUF_BCB * bcb)
   /* note: we usually use pgbuf_bcb_update_flags function. we do an exception for pgbuf_bcb_set_dirty to since it is the
    *       most used case and the code should be as optimal as possible. */
   int old_flags;
+  int lru_index;
+  int lru_zone3_dirty_hits;
+  int count_lru3;
 
   do
     {
@@ -15030,10 +15083,20 @@ pgbuf_bcb_set_dirty (THREAD_ENTRY * thread_p, PGBUF_BCB * bcb)
   ATOMIC_INC_64 (&pgbuf_Pool.monitor.dirties_cnt, 1);
   assert (pgbuf_Pool.monitor.dirties_cnt >= 0 && pgbuf_Pool.monitor.dirties_cnt <= pgbuf_Pool.num_buffers);
 
-  if (PGBUF_GET_ZONE (old_flags) == PGBUF_LRU_3_ZONE && (old_flags & PGBUF_BCB_INVALID_VICTIM_CANDIDATE_MASK) == 0)
+  if (PGBUF_GET_ZONE (old_flags) == PGBUF_LRU_3_ZONE)
     {
-      /* invalidate victim */
-      pgbuf_lru_remove_victim_candidate (thread_p, pgbuf_lru_list_from_bcb (bcb), bcb);
+      if ((old_flags & PGBUF_BCB_INVALID_VICTIM_CANDIDATE_MASK) == 0)
+	{
+	  /* invalidate victim */
+	  pgbuf_lru_remove_victim_candidate (thread_p, pgbuf_lru_list_from_bcb (bcb), bcb);
+	}
+
+      /* First time when set dirty for current page. Increment dirty hits. */
+      lru_index = PGBUF_GET_LRU_INDEX (bcb->flags);
+      count_lru3 = pgbuf_lru_list_from_bcb (bcb)->count_lru3;
+      lru_zone3_dirty_hits = ATOMIC_INC_32 (&pgbuf_Pool.monitor.lru_zone3_dirty_hits[lru_index], 1);
+      //assert(lru_zone3_dirty_hits > 0);
+      //assert(lru_zone3_dirty_hits <= count_lru3);
     }
 }
 
