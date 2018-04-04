@@ -3140,16 +3140,23 @@ pgbuf_get_victim_candidates_from_lru (THREAD_ENTRY * thread_p, int check_count, 
 	  bufptr = pgbuf_Pool.buf_LRU_list[lru_idx].bottom;
 	  if (bufptr && pgbuf_bcb_is_dirty (bufptr))
 	    {
+	      /* Flush the bottom since is dirty. */
+	      check_count_this_lru = 1;
 	      perfmon_inc_stat (thread_p, PSTAT_PB_VICTIM_SKIP_LIST_LAST_DIRTY);
 	    }
-	  /* no target for this list. */
-	  continue;
+	  else
+	    {
+	      /* no target for this list. */
+	      continue;
+	    }
 	}
+      else
+	{
+	  check_count_this_lru = (int) (victim_flush_priority_this_lru * (float) check_count / lru_sum_flush_priority);
+	  check_count_this_lru = MAX (check_count_this_lru, 1);
+	}
+
       ++count_checked_lists;
-
-      check_count_this_lru = (int) (victim_flush_priority_this_lru * (float) check_count / lru_sum_flush_priority);
-      check_count_this_lru = MAX (check_count_this_lru, 1);
-
       i = check_count_this_lru;
 
       (void) pthread_mutex_lock (&pgbuf_Pool.buf_LRU_list[lru_idx].mutex);
