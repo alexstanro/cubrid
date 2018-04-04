@@ -1006,6 +1006,9 @@ static int pgbuf_put_bcb_into_invalid_list (THREAD_ENTRY * thread_p, PGBUF_BCB *
 STATIC_INLINE int pgbuf_get_shared_lru_index_for_add (void) __attribute__ ((ALWAYS_INLINE));
 static int pgbuf_get_victim_candidates_from_lru (THREAD_ENTRY * thread_p, int check_count,
 						 float lru_sum_flush_priority, bool * assigned_directly);
+#if defined (SERVER_MODE)
+static PGBUF_BCB *pgbuf_get_victim_from_flushed_pages (THREAD_ENTRY * thread_p);
+#endif
 static PGBUF_BCB *pgbuf_get_victim (THREAD_ENTRY * thread_p);
 STATIC_INLINE PGBUF_BCB *pgbuf_get_victim_from_lru_list (THREAD_ENTRY * thread_p, const int lru_idx)
   __attribute__ ((ALWAYS_INLINE));
@@ -8182,6 +8185,142 @@ pgbuf_get_shared_lru_index_for_add (void)
 #undef PAGE_ADD_REFRESH_STAT
 }
 
+#if defined (SERVER_MODE)
+/*
+* pgbuf_get_victim_from_flushed_pages () - get a victim candidate from flushed pages.
+*
+* return        : victim candidate or NULL if no candidate was found
+* thread_p (in) : thread entry
+*
+* Note: If a victim BCB is found, this function will already lock it.
+*/
+static PGBUF_BCB *
+pgbuf_get_victim_from_flushed_pages (THREAD_ENTRY * thread_p)
+{
+  PGBUF_BCB *bcb_flushed = NULL;
+  LOCK_FREE_CIRCULAR_QUEUE *threads_queue;
+  int lru_idx, invalidate_flag;
+  bool detailed_perf = perfmon_is_perf_tracking_and_active (PERFMON_ACTIVE_PB_VICTIMIZATION);
+
+  invalidate_flag = (PGBUF_BCB_INVALID_VICTIM_CANDIDATE_MASK & (~PGBUF_BCB_FLUSHING_TO_DISK_FLAG));
+  if (VACUUM_IS_THREAD_VACUUM (thread_p) || pgbuf_is_thread_high_priority (thread_p))
+    {
+      /* High priority queue */
+      threads_queue = pgbuf_Pool.direct_victims.waiter_threads_high_priority;
+    }
+  else
+    {
+      threads_queue = pgbuf_Pool.direct_victims.waiter_threads_low_priority;
+    }
+
+  bcb_flushed = NULL;
+  while (true)
+    {
+      if (lf_circular_queue_approx_size (pgbuf_Pool.flushed_bcbs) <= lf_circular_queue_approx_size (threads_queue))
+	{
+	  /* Needs more bcbs. */
+	  break;
+	}
+
+      if (!lf_circular_queue_consume (pgbuf_Pool.flushed_bcbs, &bcb_flushed))
+	{
+	  /* Already consumed. */
+	  break;
+	}
+
+      PGBUF_BCB_LOCK (bcb_flushed);
+
+      if ((bcb_flushed->flags & invalidate_flag) != 0)
+	{
+	  /* dirty bcb is not a valid victim */
+	}
+      else if (pgbuf_is_bcb_fixed_by_any (bcb_flushed, true))
+	{
+	  /* bcb is fixed. we cannot assign it as victim */
+	}
+      else if (!PGBUF_IS_BCB_IN_LRU_VICTIM_ZONE (bcb_flushed))
+	{
+	  /* bcb is hot. don't assign it as victim */
+	}
+      else if (PGBUF_IS_PRIVATE_LRU_INDEX (pgbuf_bcb_get_lru_index (bcb_flushed))
+	       && !PGBUF_LRU_LIST_IS_OVER_QUOTA (pgbuf_lru_list_from_bcb (bcb_flushed)))
+	{
+	  /* bcb belongs to a private list under quota. give it a chance. */
+	}
+      else
+	{
+	  assert_release (!pgbuf_bcb_is_direct_victim (bcb_flushed) && bcb_flushed->next_wait_thrd == NULL);
+
+	  /* assign bcb to thread. Do not touch victim candidates. */
+	  pgbuf_bcb_update_flags (thread_p, bcb_flushed, PGBUF_BCB_VICTIM_DIRECT_FLAG, PGBUF_BCB_FLUSHING_TO_DISK_FLAG);
+
+	  switch (pgbuf_bcb_get_zone (bcb_flushed))
+	    {
+	    case PGBUF_VOID_ZONE:
+	      break;
+
+	    case PGBUF_INVALID_ZONE:
+	      /* should not be here */
+	      assert (false);
+	      break;
+
+	    default:
+	      /* lru zones */
+	      assert (PGBUF_IS_BCB_IN_LRU (bcb_flushed));
+	      lru_idx = pgbuf_bcb_get_lru_index (bcb_flushed);
+
+	      /* remove bcb from lru list */
+	      pgbuf_lru_remove_bcb (thread_p, bcb_flushed);
+
+	      /* add to AOUT */
+	      pgbuf_add_vpid_to_aout_list (thread_p, &bcb_flushed->vpid, lru_idx);
+	      break;
+	    }
+
+	  bcb_flushed->flags &= ~PGBUF_BCB_VICTIM_DIRECT_FLAG;
+
+	  if (!pgbuf_is_bcb_victimizable (bcb_flushed, true))
+	    {
+	      /* should not happen */
+	      assert_release (false);
+	      PGBUF_BCB_UNLOCK (bcb_flushed);
+	      return NULL;
+	    }
+
+	  assert (pgbuf_bcb_get_zone (bcb_flushed) == PGBUF_VOID_ZONE);
+
+	  if ((lf_circular_queue_approx_size (pgbuf_Pool.flushed_bcbs) <
+	       lf_circular_queue_approx_size (threads_queue)) && (thread_is_page_flush_thread_available ()))
+	    {
+	      /* Wakeup flush thread if needs more BCBs. */
+	      pgbuf_wakeup_flush_thread (thread_p);
+	    }
+
+	  /* assigned directly */
+	  if (detailed_perf)
+	    {
+	      perfmon_inc_stat (thread_p, PSTAT_PB_VICTIM_ASSIGN_FROM_FLUSHED_PAGES);
+	    }
+
+	  return bcb_flushed;
+	}
+
+      /* make sure bcb is no longer marked as flushing */
+      pgbuf_bcb_mark_was_flushed (thread_p, bcb_flushed);
+
+      /* wakeup thread waiting for flush */
+      if (bcb_flushed->next_wait_thrd != NULL)
+	{
+	  pgbuf_wake_flush_waiters (thread_p, bcb_flushed);
+	}
+
+      PGBUF_BCB_UNLOCK (bcb_flushed);
+    }
+
+  return NULL;
+}
+#endif
+
 /*
  * pgbuf_get_victim () - get a victim bcb from page buffer.
  *
@@ -8205,6 +8344,15 @@ pgbuf_get_victim (THREAD_ENTRY * thread_p)
   bool searched_own = false;
   UINT64 initial_consume_cursor, current_consume_cursor;
   PERF_UTIME_TRACKER perf_tracker = PERF_UTIME_TRACKER_INITIALIZER;
+
+#if defined (SERVER_MODE)
+  /* Check whether can get the victim from flushed bcbs. */
+  victim = pgbuf_get_victim_from_flushed_pages (thread_p);
+  if (victim != NULL)
+    {
+      return victim;
+    }
+#endif
 
   ATOMIC_INC_32 (&pgbuf_Pool.monitor.lru_victim_req_cnt, 1);
 
@@ -10009,7 +10157,7 @@ copy_unflushed_lsa:
 #if defined (SERVER_MODE)
   /* if the flush thread is under pressure, we'll move some of the workload to post-flush thread. */
   if (is_page_flush_thread && thread_is_page_post_flush_thread_available ()
-      && pgbuf_is_any_thread_waiting_for_direct_victim ()
+      /*&& pgbuf_is_any_thread_waiting_for_direct_victim () */
       && lf_circular_queue_produce (pgbuf_Pool.flushed_bcbs, &bufptr))
     {
       /* page buffer maintenance thread will try to assign this bcb directly as victim. */
