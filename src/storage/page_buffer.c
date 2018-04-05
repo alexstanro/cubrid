@@ -3127,6 +3127,7 @@ pgbuf_get_victim_candidates_from_lru (THREAD_ENTRY * thread_p, int check_count, 
   int check_count_this_lru;
   float victim_flush_priority_this_lru;
   int count_checked_lists = 0;
+  bool is_non_dirty_counted;
 #if defined (SERVER_MODE)
   /* as part of handling a rare case when there are rare direct victim waiters although there are plenty victims, flush
    * thread assigns one bcb per iteration directly. this will add only a little overhead in general cases. */
@@ -3137,14 +3138,16 @@ pgbuf_get_victim_candidates_from_lru (THREAD_ENTRY * thread_p, int check_count, 
   victim_cand_count = 0;
   for (lru_idx = 0; lru_idx < PGBUF_TOTAL_LRU_COUNT; lru_idx++)
     {
+      is_non_dirty_counted = false;
       victim_flush_priority_this_lru = pgbuf_Pool.quota.lru_victim_flush_priority_per_lru[lru_idx];
       if (victim_flush_priority_this_lru <= 0)
 	{
 	  bufptr = pgbuf_Pool.buf_LRU_list[lru_idx].bottom;
-	  if (bufptr && pgbuf_bcb_is_dirty (bufptr))
+	  if (bufptr && PGBUF_IS_BCB_IN_LRU_VICTIM_ZONE (bufptr) && pgbuf_bcb_is_dirty (bufptr))
 	    {
-	      /* Flush the bottom since is dirty. */
-	      check_count_this_lru = 1;
+	      /* TO DO - use a better value for check_count_this_lru. */
+	      check_count_this_lru = 10;
+	      is_non_dirty_counted = true;
 	      perfmon_inc_stat (thread_p, PSTAT_PB_VICTIM_SKIP_LIST_LAST_DIRTY);
 	    }
 	  else
@@ -3182,7 +3185,6 @@ pgbuf_get_victim_candidates_from_lru (THREAD_ENTRY * thread_p, int check_count, 
 			      && pgbuf_Pool.direct_victims.waiter_threads_low_priority != NULL
 			      && pgbuf_Pool.flushed_bcbs);
 
-	      perfmon_inc_stat (thread_p, PSTAT_PB_VICTIM_SKIP_NON_DIRTY);
 	      if (thread_is_page_post_flush_thread_available ()
 		  && pgbuf_is_any_thread_waiting_for_direct_victim ()
 		  && pgbuf_is_bcb_victimizable (bufptr, false)
@@ -3192,6 +3194,15 @@ pgbuf_get_victim_candidates_from_lru (THREAD_ENTRY * thread_p, int check_count, 
 		  thread_wakeup_page_post_flush_thread ();
 		  *assigned_directly = true;
 		  perfmon_inc_stat (thread_p, PSTAT_PB_VICTIM_ASSIGN_DIRECT_SEARCH_FOR_FLUSH);
+		}
+	      else
+		{
+		  perfmon_inc_stat (thread_p, PSTAT_PB_VICTIM_SKIP_NON_DIRTY);
+		}
+
+	      if (is_non_dirty_counted)
+		{
+		  i--;
 		}
 	    }
 #endif /* SERVER_MODE */
@@ -15003,8 +15014,8 @@ pgbuf_bcb_update_flags (THREAD_ENTRY * thread_p, PGBUF_BCB * bcb, int set_flags,
 	  lru_index = PGBUF_GET_LRU_INDEX (bcb->flags);
 	  count_lru3 = pgbuf_lru_list_from_bcb (bcb)->count_lru3;
 	  lru_zone3_dirty_hits = ATOMIC_INC_32 (&pgbuf_Pool.monitor.lru_zone3_dirty_hits[lru_index], -1);
-	  //assert (lru_zone3_dirty_hits >= 0);
-	  //assert (lru_zone3_dirty_hits < (pgbuf_lru_list_from_bcb(bcb)->count_lru3));
+	  assert (lru_zone3_dirty_hits >= 0);
+	  assert (lru_zone3_dirty_hits < (pgbuf_lru_list_from_bcb (bcb)->count_lru3));
 	}
     }
   else if (!old_dirty && new_dirty)
@@ -15017,8 +15028,8 @@ pgbuf_bcb_update_flags (THREAD_ENTRY * thread_p, PGBUF_BCB * bcb, int set_flags,
 	  lru_index = PGBUF_GET_LRU_INDEX (bcb->flags);
 	  count_lru3 = pgbuf_lru_list_from_bcb (bcb)->count_lru3;
 	  lru_zone3_dirty_hits = ATOMIC_INC_32 (&pgbuf_Pool.monitor.lru_zone3_dirty_hits[lru_index], 1);
-	  //assert(lru_zone3_dirty_hits > 0);
-	  //assert(lru_zone3_dirty_hits <= count_lru3);
+	  assert (lru_zone3_dirty_hits > 0);
+	  assert (lru_zone3_dirty_hits <= count_lru3);
 	}
     }
 
@@ -15117,8 +15128,8 @@ pgbuf_bcb_change_zone (THREAD_ENTRY * thread_p, PGBUF_BCB * bcb, int new_lru_idx
 	      assert (PGBUF_GET_ZONE (new_flags) != PGBUF_LRU_3_ZONE);
 	      count_lru3 = lru_list->count_lru3;
 	      lru_zone3_dirty_hits = ATOMIC_INC_32 (&pgbuf_Pool.monitor.lru_zone3_dirty_hits[lru_idx], -1);
-	      //assert (lru_zone3_dirty_hits >= 0);
-	      //assert (lru_zone3_dirty_hits <= count_lru3);
+	      assert (lru_zone3_dirty_hits >= 0);
+	      assert (lru_zone3_dirty_hits <= count_lru3);
 	    }
 	  if (is_valid_victim_candidate)
 	    {
@@ -15154,8 +15165,8 @@ pgbuf_bcb_change_zone (THREAD_ENTRY * thread_p, PGBUF_BCB * bcb, int new_lru_idx
 	    {
 	      assert (PGBUF_GET_ZONE (old_flags) != PGBUF_LRU_3_ZONE);
 	      lru_zone3_dirty_hits = ATOMIC_INC_32 (&pgbuf_Pool.monitor.lru_zone3_dirty_hits[new_lru_idx], 1);
-	      //assert (lru_zone3_dirty_hits > 0);
-	      //assert (lru_zone3_dirty_hits <= count_lru3);
+	      assert (lru_zone3_dirty_hits > 0);
+	      assert (lru_zone3_dirty_hits <= count_lru3);
 	    }
 	  if (is_valid_victim_candidate)
 	    {
@@ -15250,8 +15261,8 @@ pgbuf_bcb_set_dirty (THREAD_ENTRY * thread_p, PGBUF_BCB * bcb)
       lru_index = PGBUF_GET_LRU_INDEX (bcb->flags);
       count_lru3 = pgbuf_lru_list_from_bcb (bcb)->count_lru3;
       lru_zone3_dirty_hits = ATOMIC_INC_32 (&pgbuf_Pool.monitor.lru_zone3_dirty_hits[lru_index], 1);
-      //assert(lru_zone3_dirty_hits > 0);
-      //assert(lru_zone3_dirty_hits <= count_lru3);
+      assert (lru_zone3_dirty_hits > 0);
+      assert (lru_zone3_dirty_hits <= count_lru3);
     }
 }
 
