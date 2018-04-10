@@ -3185,6 +3185,12 @@ pgbuf_get_victim_candidates_from_lru (THREAD_ENTRY * thread_p, int check_count, 
 			      && pgbuf_Pool.direct_victims.waiter_threads_low_priority != NULL
 			      && pgbuf_Pool.flushed_bcbs);
 
+	      if (PGBUF_IS_PRIVATE_LRU_INDEX (pgbuf_bcb_get_lru_index (bufptr))
+		  && !PGBUF_LRU_LIST_IS_OVER_QUOTA (pgbuf_lru_list_from_bcb (bufptr)))
+		{
+		  continue;
+		}
+
 	      if (thread_is_page_post_flush_thread_available ()
 		  && pgbuf_is_any_thread_waiting_for_direct_victim ()
 		  && pgbuf_is_bcb_victimizable (bufptr, false)
@@ -10169,6 +10175,8 @@ copy_unflushed_lsa:
   /* if the flush thread is under pressure, we'll move some of the workload to post-flush thread. */
   if (is_page_flush_thread && thread_is_page_post_flush_thread_available ()
       /*&& pgbuf_is_any_thread_waiting_for_direct_victim () */
+      && (PGBUF_IS_SHARED_LRU_INDEX (pgbuf_bcb_get_lru_index (bufptr))
+	  || PGBUF_LRU_LIST_IS_OVER_QUOTA (pgbuf_lru_list_from_bcb (bufptr)))
       && lf_circular_queue_produce (pgbuf_Pool.flushed_bcbs, &bufptr))
     {
       /* page buffer maintenance thread will try to assign this bcb directly as victim. */
