@@ -8223,26 +8223,26 @@ static PGBUF_BCB *
 pgbuf_get_victim_from_flushed_pages (THREAD_ENTRY * thread_p)
 {
   PGBUF_BCB *bcb_flushed = NULL;
-  LOCK_FREE_CIRCULAR_QUEUE *threads_queue;
   int lru_idx, invalidate_flag;
   bool detailed_perf = perfmon_is_perf_tracking_and_active (PERFMON_ACTIVE_PB_VICTIMIZATION);
+  int min_flushed_bcb_queue_size;
 
   invalidate_flag = (PGBUF_BCB_INVALID_VICTIM_CANDIDATE_MASK & (~PGBUF_BCB_FLUSHING_TO_DISK_FLAG));
-  if (VACUUM_IS_THREAD_VACUUM (thread_p) || pgbuf_is_thread_high_priority (thread_p))
-    {
-      /* High priority queue */
-      threads_queue = pgbuf_Pool.direct_victims.waiter_threads_high_priority;
-    }
-  else
-    {
-      threads_queue = pgbuf_Pool.direct_victims.waiter_threads_low_priority;
-    }
 
   bcb_flushed = NULL;
   while (true)
     {
-      if (lf_circular_queue_approx_size (pgbuf_Pool.flushed_bcbs) <= lf_circular_queue_approx_size (threads_queue))
+      min_flushed_bcb_queue_size =
+	lf_circular_queue_approx_size (pgbuf_Pool.direct_victims.waiter_threads_high_priority) +
+	lf_circular_queue_approx_size (pgbuf_Pool.direct_victims.waiter_threads_low_priority);
+
+      if (lf_circular_queue_approx_size (pgbuf_Pool.flushed_bcbs) <= min_flushed_bcb_queue_size)
 	{
+	  if (thread_is_page_flush_thread_available ())
+	    {
+	      pgbuf_wakeup_flush_thread (thread_p);
+	    }
+
 	  /* Needs more bcbs. */
 	  break;
 	}
@@ -8314,8 +8314,12 @@ pgbuf_get_victim_from_flushed_pages (THREAD_ENTRY * thread_p)
 
 	  assert (pgbuf_bcb_get_zone (bcb_flushed) == PGBUF_VOID_ZONE);
 
-	  if ((lf_circular_queue_approx_size (pgbuf_Pool.flushed_bcbs) <
-	       lf_circular_queue_approx_size (threads_queue)) && (thread_is_page_flush_thread_available ()))
+	  min_flushed_bcb_queue_size =
+	    lf_circular_queue_approx_size (pgbuf_Pool.direct_victims.waiter_threads_high_priority) +
+	    lf_circular_queue_approx_size (pgbuf_Pool.direct_victims.waiter_threads_low_priority);
+
+	  if ((lf_circular_queue_approx_size (pgbuf_Pool.flushed_bcbs) <= min_flushed_bcb_queue_size)
+	      && (thread_is_page_flush_thread_available ()))
 	    {
 	      /* Wakeup flush thread if needs more BCBs. */
 	      pgbuf_wakeup_flush_thread (thread_p);
