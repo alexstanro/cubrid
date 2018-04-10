@@ -3122,7 +3122,7 @@ static int
 pgbuf_get_victim_candidates_from_lru (THREAD_ENTRY * thread_p, int check_count, float lru_sum_flush_priority,
 				      bool * assigned_directly)
 {
-  int lru_idx, victim_cand_count, i;
+  int lru_idx, victim_cand_count, i, count_flushed_bcb = 0, max_flushed_bcb = 100;
   PGBUF_BCB *bufptr;
   int check_count_this_lru;
   float victim_flush_priority_this_lru;
@@ -3199,14 +3199,34 @@ pgbuf_get_victim_candidates_from_lru (THREAD_ENTRY * thread_p, int check_count, 
 		  continue;
 		}
 
-	      if (thread_is_page_post_flush_thread_available ()
-		  && pgbuf_is_any_thread_waiting_for_direct_victim ()
-		  && pgbuf_is_bcb_victimizable (bufptr, false)
+	      /* Reserve at least 100 BCBs for victims, since flushing may be slow. */
+	      if (count_flushed_bcb >= max_flushed_bcb)
+		{
+		  if (lf_circular_queue_approx_size (pgbuf_Pool.flushed_bcbs) < max_flushed_bcb)
+		    {
+		      /* Reset count flushed bcb. */
+		      count_flushed_bcb = 0;
+		    }
+		  else if (!pgbuf_is_any_thread_waiting_for_direct_victim ())
+		    {
+		      if (is_non_dirty_counted)
+			{
+			  i--;
+			}
+
+		      perfmon_inc_stat (thread_p, PSTAT_PB_VICTIM_SKIP_NON_DIRTY);
+		      continue;
+		    }
+		}
+
+	      if (pgbuf_is_bcb_victimizable (bufptr, false)
+		  && thread_is_page_post_flush_thread_available ()
 		  && lf_circular_queue_produce (pgbuf_Pool.flushed_bcbs, &bufptr))
 		{
 		  /* assigned directly. don't try any other. */
 		  thread_wakeup_page_post_flush_thread ();
 		  *assigned_directly = true;
+		  count_flushed_bcb++;
 		  perfmon_inc_stat (thread_p, PSTAT_PB_VICTIM_ASSIGN_DIRECT_SEARCH_FOR_FLUSH);
 		}
 	      else
@@ -8249,6 +8269,11 @@ pgbuf_get_victim_from_flushed_pages (THREAD_ENTRY * thread_p)
 
       if (!lf_circular_queue_consume (pgbuf_Pool.flushed_bcbs, &bcb_flushed))
 	{
+	  if (thread_is_page_flush_thread_available ())
+	    {
+	      pgbuf_wakeup_flush_thread (thread_p);
+	    }
+
 	  /* Already consumed. */
 	  break;
 	}
