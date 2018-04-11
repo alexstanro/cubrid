@@ -3122,7 +3122,7 @@ static int
 pgbuf_get_victim_candidates_from_lru (THREAD_ENTRY * thread_p, int check_count, float lru_sum_flush_priority,
 				      bool * assigned_directly)
 {
-  int lru_idx, victim_cand_count, i, count_flushed_bcb = 0, max_flushed_bcb = 100;
+  int lru_idx, victim_cand_count, i, count_flushed_bcb = 0, max_flushed_bcb = 1000;
   PGBUF_BCB *bufptr;
   int check_count_this_lru;
   float victim_flush_priority_this_lru;
