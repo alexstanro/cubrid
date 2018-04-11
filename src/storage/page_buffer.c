@@ -3161,14 +3161,7 @@ pgbuf_get_victim_candidates_from_lru (THREAD_ENTRY * thread_p, int check_count, 
       else
 	{
 	  check_count_this_lru = (int) (victim_flush_priority_this_lru * (float) check_count / lru_sum_flush_priority);
-	  check_count_this_lru = MAX (check_count_this_lru, 1);
-
-	  if ((check_count_this_lru < 10)
-	      && (PGBUF_IS_SHARED_LRU_INDEX (lru_idx) || PGBUF_LRU_LIST_IS_OVER_QUOTA (PGBUF_GET_LRU_LIST (lru_idx))))
-	    {
-	      check_count_this_lru = 10;
-	      is_non_dirty_counted = true;
-	    }
+	  check_count_this_lru = MAX (check_count_this_lru, 1);	  
 	}
 
       ++count_checked_lists;
