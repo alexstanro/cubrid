@@ -3156,7 +3156,7 @@ pgbuf_get_victim_candidates_from_lru (THREAD_ENTRY * thread_p, int check_count, 
 	}
 
       victim_priority_this_lru = pgbuf_Pool.quota.lru_victim_priority_per_lru[lru_idx];
-      check_victim_count_this_lru = (int) (victim_flush_priority_this_lru * (float) check_count);
+      check_victim_count_this_lru = (int) (victim_priority_this_lru * (float) check_count);
       if ((check_victim_count_this_lru >= 0) && (check_victim_count_this_lru > check_count_this_lru))
 	{
 	  check_victim_count_this_lru = check_victim_count_this_lru - check_count_this_lru;
