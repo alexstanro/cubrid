@@ -3145,23 +3145,19 @@ pgbuf_get_victim_candidates_from_lru (THREAD_ENTRY * thread_p, int check_count, 
 	  bufptr = pgbuf_Pool.buf_LRU_list[lru_idx].bottom;
 	  if (bufptr && PGBUF_IS_BCB_IN_LRU_VICTIM_ZONE (bufptr) && pgbuf_bcb_is_dirty (bufptr))
 	    {
+	      check_count_this_lru = 10;
+	      is_non_dirty_counted = true;
 	      perfmon_inc_stat (thread_p, PSTAT_PB_VICTIM_SKIP_LIST_LAST_DIRTY);
 	    }
-
-	  if (PGBUF_IS_PRIVATE_LRU_INDEX (lru_idx) && !PGBUF_LRU_LIST_IS_OVER_QUOTA (PGBUF_GET_LRU_LIST (lru_idx)))
+	  else
 	    {
-	      /* Low priority when search for victim. */
 	      continue;
 	    }
-
-	  /* TO DO - use a better value for check_count_this_lru. */
-	  check_count_this_lru = 10;
-	  is_non_dirty_counted = true;
 	}
       else
 	{
 	  check_count_this_lru = (int) (victim_flush_priority_this_lru * (float) check_count / lru_sum_flush_priority);
-	  check_count_this_lru = MAX (check_count_this_lru, 1);	  
+	  check_count_this_lru = MAX (check_count_this_lru, 1);
 	}
 
       ++count_checked_lists;
