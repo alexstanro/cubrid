@@ -714,6 +714,7 @@ struct pgbuf_page_quota
 
   /* Real-time tunning: */
   float *lru_victim_flush_priority_per_lru;	/* priority to flush from this LRU */
+  float *lru_victim_priority_per_lru;	/* victim priority from this LRU */
 
   int *private_lru_session_cnt;	/* Number of active session for each private LRU:  Contains only private lists ! */
   float private_pages_ratio;	/* Ratio of all private BCBs among total BCBs */
@@ -1614,6 +1615,12 @@ pgbuf_finalize (void)
     {
       free_and_init (pgbuf_Pool.quota.lru_victim_flush_priority_per_lru);
     }
+
+  if (pgbuf_Pool.quota.lru_victim_priority_per_lru != NULL)
+    {
+      free_and_init (pgbuf_Pool.quota.lru_victim_priority_per_lru);
+    }
+
   if (pgbuf_Pool.quota.private_lru_session_cnt != NULL)
     {
       free_and_init (pgbuf_Pool.quota.private_lru_session_cnt);
@@ -3122,12 +3129,11 @@ static int
 pgbuf_get_victim_candidates_from_lru (THREAD_ENTRY * thread_p, int check_count, float lru_sum_flush_priority,
 				      bool * assigned_directly)
 {
-  int lru_idx, victim_cand_count, i, count_flushed_bcb = 0, max_flushed_bcb = 1000;
+  int lru_idx, victim_cand_count, i, count_flushed_bcb = 0, max_flushed_bcb = 100;
   PGBUF_BCB *bufptr;
-  int check_count_this_lru;
-  float victim_flush_priority_this_lru;
+  int check_count_this_lru, check_victim_count_this_lru;
+  float victim_flush_priority_this_lru, victim_priority_this_lru;
   int count_checked_lists = 0;
-  bool is_non_dirty_counted;
 #if defined (SERVER_MODE)
   /* as part of handling a rare case when there are rare direct victim waiters although there are plenty victims, flush
    * thread assigns one bcb per iteration directly. this will add only a little overhead in general cases. */
@@ -3138,26 +3144,27 @@ pgbuf_get_victim_candidates_from_lru (THREAD_ENTRY * thread_p, int check_count, 
   victim_cand_count = 0;
   for (lru_idx = 0; lru_idx < PGBUF_TOTAL_LRU_COUNT; lru_idx++)
     {
-      is_non_dirty_counted = false;
       victim_flush_priority_this_lru = pgbuf_Pool.quota.lru_victim_flush_priority_per_lru[lru_idx];
       if (victim_flush_priority_this_lru <= 0)
 	{
-	  bufptr = pgbuf_Pool.buf_LRU_list[lru_idx].bottom;
-	  if (bufptr && PGBUF_IS_BCB_IN_LRU_VICTIM_ZONE (bufptr) && pgbuf_bcb_is_dirty (bufptr))
-	    {
-	      check_count_this_lru = 10;
-	      is_non_dirty_counted = true;
-	      perfmon_inc_stat (thread_p, PSTAT_PB_VICTIM_SKIP_LIST_LAST_DIRTY);
-	    }
-	  else
-	    {
-	      continue;
-	    }
+	  check_count_this_lru = 0;
 	}
       else
 	{
 	  check_count_this_lru = (int) (victim_flush_priority_this_lru * (float) check_count / lru_sum_flush_priority);
 	  check_count_this_lru = MAX (check_count_this_lru, 1);
+	}
+
+      victim_priority_this_lru = pgbuf_Pool.quota.lru_victim_priority_per_lru[lru_idx];
+      check_victim_count_this_lru = (int) (victim_flush_priority_this_lru * (float) check_count);
+      if ((check_victim_count_this_lru >= 0) && (check_victim_count_this_lru > check_count_this_lru))
+	{
+	  check_victim_count_this_lru = check_victim_count_this_lru - check_count_this_lru;
+	}
+
+      if (check_count_this_lru == 0 && check_victim_count_this_lru == 0)
+	{
+	  continue;
 	}
 
       ++count_checked_lists;
@@ -3166,7 +3173,8 @@ pgbuf_get_victim_candidates_from_lru (THREAD_ENTRY * thread_p, int check_count, 
       (void) pthread_mutex_lock (&pgbuf_Pool.buf_LRU_list[lru_idx].mutex);
 
       for (bufptr = pgbuf_Pool.buf_LRU_list[lru_idx].bottom;
-	   bufptr != NULL && PGBUF_IS_BCB_IN_LRU_VICTIM_ZONE (bufptr) && i > 0; bufptr = bufptr->prev_BCB)
+	   bufptr != NULL && PGBUF_IS_BCB_IN_LRU_VICTIM_ZONE (bufptr) && ((i > 0) || (check_victim_count_this_lru > 0));
+	   bufptr = bufptr->prev_BCB)
 	{
 	  if (pgbuf_bcb_is_dirty (bufptr))
 	    {
@@ -3174,7 +3182,14 @@ pgbuf_get_victim_candidates_from_lru (THREAD_ENTRY * thread_p, int check_count, 
 	      pgbuf_Pool.victim_cand_list[victim_cand_count].bufptr = bufptr;
 	      pgbuf_Pool.victim_cand_list[victim_cand_count].vpid = bufptr->vpid;
 	      victim_cand_count++;
-	      i--;
+	      if (i > 0)
+		{
+		  i--;
+		}
+	      else
+		{
+		  check_victim_count_this_lru--;
+		}
 	    }
 #if defined (SERVER_MODE)
 	  else
@@ -3183,6 +3198,7 @@ pgbuf_get_victim_candidates_from_lru (THREAD_ENTRY * thread_p, int check_count, 
 			      && pgbuf_Pool.direct_victims.waiter_threads_low_priority != NULL
 			      && pgbuf_Pool.flushed_bcbs);
 
+	      check_victim_count_this_lru--;
 	      if (PGBUF_IS_PRIVATE_LRU_INDEX (lru_idx) && !PGBUF_LRU_LIST_IS_OVER_QUOTA (PGBUF_GET_LRU_LIST (lru_idx)))
 		{
 		  continue;
@@ -3198,11 +3214,6 @@ pgbuf_get_victim_candidates_from_lru (THREAD_ENTRY * thread_p, int check_count, 
 		    }
 		  else if (!pgbuf_is_any_thread_waiting_for_direct_victim ())
 		    {
-		      if (is_non_dirty_counted)
-			{
-			  i--;
-			}
-
 		      perfmon_inc_stat (thread_p, PSTAT_PB_VICTIM_SKIP_NON_DIRTY);
 		      continue;
 		    }
@@ -3221,11 +3232,6 @@ pgbuf_get_victim_candidates_from_lru (THREAD_ENTRY * thread_p, int check_count, 
 	      else
 		{
 		  perfmon_inc_stat (thread_p, PSTAT_PB_VICTIM_SKIP_NON_DIRTY);
-		}
-
-	      if (is_non_dirty_counted)
-		{
-		  i--;
 		}
 	    }
 #endif /* SERVER_MODE */
@@ -13274,6 +13280,16 @@ pgbuf_initialize_page_quota (void)
       goto exit;
     }
 
+  quota->lru_victim_priority_per_lru =
+    (float *) malloc (PGBUF_TOTAL_LRU_COUNT * sizeof (quota->lru_victim_priority_per_lru[0]));
+  if (quota->lru_victim_priority_per_lru == NULL)
+    {
+      error_status = ER_OUT_OF_VIRTUAL_MEMORY;
+      er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_OUT_OF_VIRTUAL_MEMORY,
+	      1, (PGBUF_TOTAL_LRU_COUNT * sizeof (quota->lru_victim_priority_per_lru[0])));
+      goto exit;
+    }
+
   quota->private_lru_session_cnt =
     (int *) malloc (PGBUF_PRIVATE_LRU_COUNT * sizeof (quota->private_lru_session_cnt[0]));
   if (quota->private_lru_session_cnt == NULL)
@@ -13288,6 +13304,7 @@ pgbuf_initialize_page_quota (void)
   for (i = 0; i < PGBUF_TOTAL_LRU_COUNT; i++)
     {
       quota->lru_victim_flush_priority_per_lru[i] = 0;
+      quota->lru_victim_priority_per_lru[i] = 0;
 
       if (PGBUF_IS_PRIVATE_LRU_INDEX (i))
 	{
@@ -13411,19 +13428,31 @@ static void
 pgbuf_compute_lru_vict_target (float *lru_sum_flush_priority)
 {
   int i, lru_shared_dirty_hits, lru_private_dirty_hits;
-  float prv_flush_ratio;
-  float shared_flush_ratio;
+  float prv_flush_ratio, prv_hits_flush_ratio;
+  float shared_flush_ratio, shared_hits_flush_ratio;
+  float prv_quota;
+  float prv_real_ratio;
+  float diff;
   PGBUF_PAGE_MONITOR *monitor;
+  int total_prv_target = 0;
+  int this_prv_target = 0;
 
   monitor = &pgbuf_Pool.monitor;
-
-  int this_prv_target = 0;
 
   PGBUF_LRU_LIST *lru_list;
 
   assert (lru_sum_flush_priority != NULL);
 
   *lru_sum_flush_priority = 0;
+
+
+  prv_quota = pgbuf_Pool.quota.private_pages_ratio;
+  assert (pgbuf_Pool.monitor.lru_shared_pgs_cnt >= 0
+	  && pgbuf_Pool.monitor.lru_shared_pgs_cnt <= pgbuf_Pool.num_buffers);
+  prv_real_ratio = 1.0f - ((float) pgbuf_Pool.monitor.lru_shared_pgs_cnt / pgbuf_Pool.num_buffers);
+  diff = prv_quota - prv_real_ratio;
+  prv_hits_flush_ratio = prv_real_ratio * (1.0f - diff);
+  prv_hits_flush_ratio = MIN (1.0f, prv_hits_flush_ratio);
 
   lru_private_dirty_hits = 0;
   lru_shared_dirty_hits = 0;
@@ -13441,6 +13470,14 @@ pgbuf_compute_lru_vict_target (float *lru_sum_flush_priority)
 	{
 	  /* collect to total private hits */
 	  lru_private_dirty_hits += monitor->lru_zone3_dirty_activity[i];
+
+	  lru_list = PGBUF_GET_LRU_LIST (i);
+	  this_prv_target = PGBUF_LRU_LIST_COUNT (lru_list) - (int) (lru_list->quota * 0.9);
+	  this_prv_target = MIN (this_prv_target, lru_list->count_lru3);
+	  if (this_prv_target > 0)
+	    {
+	      total_prv_target += this_prv_target;
+	    }
 	}
       else
 	{
@@ -13451,11 +13488,14 @@ pgbuf_compute_lru_vict_target (float *lru_sum_flush_priority)
   prv_flush_ratio = (float) lru_private_dirty_hits / ((float) lru_private_dirty_hits + (float) lru_shared_dirty_hits);
   shared_flush_ratio = 1.0f - prv_flush_ratio;
 
+  shared_hits_flush_ratio = 1.0f - prv_hits_flush_ratio;
+
   for (i = 0; i < PGBUF_TOTAL_LRU_COUNT; i++)
     {
       lru_list = PGBUF_GET_LRU_LIST (i);
       if (PGBUF_IS_SHARED_LRU_INDEX (i))
 	{
+	  pgbuf_Pool.quota.lru_victim_priority_per_lru[i] = shared_hits_flush_ratio / (float) PGBUF_SHARED_LRU_COUNT;
 	  if (shared_flush_ratio == 0.0f)
 	    {
 	      pgbuf_Pool.quota.lru_victim_flush_priority_per_lru[i] = 0.0f;
@@ -13479,6 +13519,7 @@ pgbuf_compute_lru_vict_target (float *lru_sum_flush_priority)
 	  if (prv_flush_ratio == 0.0f)
 	    {
 	      pgbuf_Pool.quota.lru_victim_flush_priority_per_lru[i] = 0.0f;
+	      pgbuf_Pool.quota.lru_victim_priority_per_lru[i] = 0.0f;
 	    }
 	  else
 	    {
@@ -13491,6 +13532,20 @@ pgbuf_compute_lru_vict_target (float *lru_sum_flush_priority)
 	      else
 		{
 		  pgbuf_Pool.quota.lru_victim_flush_priority_per_lru[i] = 0.0f;
+		}
+
+	      /* use bcb's over 90% of quota as flush target */
+	      this_prv_target = PGBUF_LRU_LIST_COUNT (lru_list) - (int) (lru_list->quota * 0.9);
+	      this_prv_target = MIN (this_prv_target, lru_list->count_lru3);
+
+	      if (this_prv_target > 0)
+		{
+		  pgbuf_Pool.quota.lru_victim_priority_per_lru[i] =
+		    prv_hits_flush_ratio * ((float) this_prv_target / (float) total_prv_target);
+		}
+	      else
+		{
+		  pgbuf_Pool.quota.lru_victim_priority_per_lru[i] = 0.0f;
 		}
 	    }
 	}
