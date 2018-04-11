@@ -3157,10 +3157,6 @@ pgbuf_get_victim_candidates_from_lru (THREAD_ENTRY * thread_p, int check_count, 
 
       victim_priority_this_lru = pgbuf_Pool.quota.lru_victim_priority_per_lru[lru_idx];
       check_victim_count_this_lru = (int) (victim_priority_this_lru * (float) check_count);
-      if ((check_victim_count_this_lru >= 0) && (check_victim_count_this_lru > check_count_this_lru))
-	{
-	  check_victim_count_this_lru = check_victim_count_this_lru - check_count_this_lru;
-	}
 
       if (check_count_this_lru == 0 && check_victim_count_this_lru == 0)
 	{
@@ -3182,14 +3178,8 @@ pgbuf_get_victim_candidates_from_lru (THREAD_ENTRY * thread_p, int check_count, 
 	      pgbuf_Pool.victim_cand_list[victim_cand_count].bufptr = bufptr;
 	      pgbuf_Pool.victim_cand_list[victim_cand_count].vpid = bufptr->vpid;
 	      victim_cand_count++;
-	      if (i > 0)
-		{
-		  i--;
-		}
-	      else
-		{
-		  check_victim_count_this_lru--;
-		}
+	      i--;
+	      check_victim_count_this_lru--;
 	    }
 #if defined (SERVER_MODE)
 	  else
