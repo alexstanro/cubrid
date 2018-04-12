@@ -3122,7 +3122,7 @@ static int
 pgbuf_get_victim_candidates_from_lru (THREAD_ENTRY * thread_p, int check_count, float lru_sum_flush_priority,
 				      bool * assigned_directly)
 {
-  int lru_idx, victim_cand_count, i, count_flushed_bcb = 0, max_flushed_bcb = 1000;
+  int lru_idx, victim_cand_count, i, count_flushed_bcb = 0, max_flushed_bcb = 2000;
   PGBUF_BCB *bufptr;
   int check_count_this_lru;
   float victim_flush_priority_this_lru;
@@ -14610,7 +14610,7 @@ pgbuf_fix_if_not_deallocated_with_caller (THREAD_ENTRY * thread_p, const VPID * 
 bool
 pgbuf_keep_victim_flush_thread_running (void)
 {
-  return (pgbuf_is_any_thread_waiting_for_direct_victim () || pgbuf_is_hit_ratio_low ());
+  return (pgbuf_is_any_thread_waiting_for_direct_victim () || pgbuf_is_hit_ratio_low () || (lf_circular_queue_approx_size(pgbuf_Pool.flushed_bcbs) < 1000));
 }
 #endif /* SERVER_MDOE */
 
