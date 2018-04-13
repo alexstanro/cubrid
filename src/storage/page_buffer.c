@@ -3110,6 +3110,7 @@ pgbuf_compare_victim_list (const void *p1, const void *p2)
     }
 }
 
+static volatile bool start_searching_for_victim_candidates = false;
 /*
  * pgbuf_get_victim_candidates_from_lru () - get victim candidates from LRU list
  * return                  : number of victims found
@@ -3135,6 +3136,7 @@ pgbuf_get_victim_candidates_from_lru (THREAD_ENTRY * thread_p, int check_count, 
 #endif /* SERVER_MODE */
 
   /* init */
+  start_searching_for_victim_candidates = true;
   victim_cand_count = 0;
   for (lru_idx = 0; lru_idx < PGBUF_TOTAL_LRU_COUNT; lru_idx++)
     {
@@ -3183,10 +3185,10 @@ pgbuf_get_victim_candidates_from_lru (THREAD_ENTRY * thread_p, int check_count, 
 			      && pgbuf_Pool.direct_victims.waiter_threads_low_priority != NULL
 			      && pgbuf_Pool.flushed_bcbs);
 
-	      /*if (PGBUF_IS_PRIVATE_LRU_INDEX (lru_idx) && !PGBUF_LRU_LIST_IS_OVER_QUOTA (PGBUF_GET_LRU_LIST (lru_idx)))
-	         {
-	         continue;
-	         } */
+	      if (PGBUF_IS_PRIVATE_LRU_INDEX (lru_idx) && !PGBUF_LRU_LIST_IS_OVER_QUOTA (PGBUF_GET_LRU_LIST (lru_idx)))
+		{
+		  continue;
+		}
 
 	      /* Reserve at least 100 BCBs for victims, since flushing may be slow. */
 	      if (count_flushed_bcb >= max_flushed_bcb)
@@ -3234,6 +3236,7 @@ pgbuf_get_victim_candidates_from_lru (THREAD_ENTRY * thread_p, int check_count, 
       pthread_mutex_unlock (&pgbuf_Pool.buf_LRU_list[lru_idx].mutex);
       /* Dirty hits will be updated at flush. */
     }
+  start_searching_for_victim_candidates = false;
 
   er_log_debug (ARG_FILE_LINE,
 		"pgbuf_flush_victim_candidates: pgbuf_get_victim_candidates_from_lru %d candidates in %d lists \n",
@@ -8281,11 +8284,11 @@ pgbuf_get_victim_from_flushed_pages (THREAD_ENTRY * thread_p)
 	{
 	  /* bcb is hot. don't assign it as victim */
 	}
-      //     else if (PGBUF_IS_PRIVATE_LRU_INDEX (pgbuf_bcb_get_lru_index (bcb_flushed))
-      //       && !PGBUF_LRU_LIST_IS_OVER_QUOTA (pgbuf_lru_list_from_bcb (bcb_flushed)))
-      //{
-      //  /* bcb belongs to a private list under quota. give it a chance. */
-      //}
+      else if (PGBUF_IS_PRIVATE_LRU_INDEX (pgbuf_bcb_get_lru_index (bcb_flushed))
+	       && !PGBUF_LRU_LIST_IS_OVER_QUOTA (pgbuf_lru_list_from_bcb (bcb_flushed)))
+	{
+	  /* bcb belongs to a private list under quota. give it a chance. */
+	}
       else
 	{
 	  assert_release (!pgbuf_bcb_is_direct_victim (bcb_flushed) && bcb_flushed->next_wait_thrd == NULL);
@@ -8393,11 +8396,17 @@ pgbuf_get_victim (THREAD_ENTRY * thread_p)
   victim = pgbuf_get_victim_from_flushed_pages (thread_p);
   if (victim != NULL)
     {
+      perfmon_inc_stat (thread_p, PSTAT_PB_NUM_GET_VICTIM_FROM_FLUSHED_PAGE);
       return victim;
     }
 #endif
 
   ATOMIC_INC_32 (&pgbuf_Pool.monitor.lru_victim_req_cnt, 1);
+  if (start_searching_for_victim_candidates)
+    {
+      perfmon_inc_stat (thread_p, PSTAT_PB_NUM_SKIPPED_SEARCH_FOR_VICTIM);
+      return NULL;
+    }
 
   /* how this works:
    * we need to find a victim in one of all lru lists. we have two lru list types: private and shared. private are pages
