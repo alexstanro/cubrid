@@ -3183,10 +3183,10 @@ pgbuf_get_victim_candidates_from_lru (THREAD_ENTRY * thread_p, int check_count, 
 			      && pgbuf_Pool.direct_victims.waiter_threads_low_priority != NULL
 			      && pgbuf_Pool.flushed_bcbs);
 
-	      if (PGBUF_IS_PRIVATE_LRU_INDEX (lru_idx) && !PGBUF_LRU_LIST_IS_OVER_QUOTA (PGBUF_GET_LRU_LIST (lru_idx)))
-		{
-		  continue;
-		}
+	      /*if (PGBUF_IS_PRIVATE_LRU_INDEX (lru_idx) && !PGBUF_LRU_LIST_IS_OVER_QUOTA (PGBUF_GET_LRU_LIST (lru_idx)))
+	         {
+	         continue;
+	         } */
 
 	      /* Reserve at least 100 BCBs for victims, since flushing may be slow. */
 	      if (count_flushed_bcb >= max_flushed_bcb)
@@ -8281,11 +8281,11 @@ pgbuf_get_victim_from_flushed_pages (THREAD_ENTRY * thread_p)
 	{
 	  /* bcb is hot. don't assign it as victim */
 	}
-      else if (PGBUF_IS_PRIVATE_LRU_INDEX (pgbuf_bcb_get_lru_index (bcb_flushed))
-	       && !PGBUF_LRU_LIST_IS_OVER_QUOTA (pgbuf_lru_list_from_bcb (bcb_flushed)))
-	{
-	  /* bcb belongs to a private list under quota. give it a chance. */
-	}
+      //     else if (PGBUF_IS_PRIVATE_LRU_INDEX (pgbuf_bcb_get_lru_index (bcb_flushed))
+      //       && !PGBUF_LRU_LIST_IS_OVER_QUOTA (pgbuf_lru_list_from_bcb (bcb_flushed)))
+      //{
+      //  /* bcb belongs to a private list under quota. give it a chance. */
+      //}
       else
 	{
 	  assert_release (!pgbuf_bcb_is_direct_victim (bcb_flushed) && bcb_flushed->next_wait_thrd == NULL);
@@ -14610,7 +14610,8 @@ pgbuf_fix_if_not_deallocated_with_caller (THREAD_ENTRY * thread_p, const VPID * 
 bool
 pgbuf_keep_victim_flush_thread_running (void)
 {
-  return (pgbuf_is_any_thread_waiting_for_direct_victim () || pgbuf_is_hit_ratio_low () || (lf_circular_queue_approx_size(pgbuf_Pool.flushed_bcbs) < 1000));
+  return (pgbuf_is_any_thread_waiting_for_direct_victim () || pgbuf_is_hit_ratio_low ()
+	  || (lf_circular_queue_approx_size (pgbuf_Pool.flushed_bcbs) < 1000));
 }
 #endif /* SERVER_MDOE */
 
@@ -14717,11 +14718,11 @@ pgbuf_assign_flushed_pages (THREAD_ENTRY * thread_p)
 	{
 	  /* bcb is hot. don't assign it as victim */
 	}
-      else if (PGBUF_IS_PRIVATE_LRU_INDEX (pgbuf_bcb_get_lru_index (bcb_flushed))
-	       && !PGBUF_LRU_LIST_IS_OVER_QUOTA (pgbuf_lru_list_from_bcb (bcb_flushed)))
-	{
-	  /* bcb belongs to a private list under quota. give it a chance. */
-	}
+      //     else if (PGBUF_IS_PRIVATE_LRU_INDEX (pgbuf_bcb_get_lru_index (bcb_flushed))
+      //       && !PGBUF_LRU_LIST_IS_OVER_QUOTA (pgbuf_lru_list_from_bcb (bcb_flushed)))
+      //{
+      //  /* bcb belongs to a private list under quota. give it a chance. */
+      //}
       else if (pgbuf_assign_direct_victim (thread_p, bcb_flushed))
 	{
 	  /* assigned directly */
