@@ -727,7 +727,7 @@ struct pgbuf_page_quota
 
   TSC_TICKS last_adjust_time;
   INT32 adjust_age;
-  volatile int is_adjusting;
+  int is_adjusting;
 };
 
 #if defined (SERVER_MODE)
@@ -3183,11 +3183,10 @@ pgbuf_get_victim_candidates_from_lru (THREAD_ENTRY * thread_p, int check_count, 
 			      && pgbuf_Pool.direct_victims.waiter_threads_low_priority != NULL
 			      && pgbuf_Pool.flushed_bcbs);
 
-	      if ((pgbuf_Pool.quota.is_adjusting == 0) && PGBUF_IS_PRIVATE_LRU_INDEX (lru_idx)
-		  && !PGBUF_LRU_LIST_IS_OVER_QUOTA (PGBUF_GET_LRU_LIST (lru_idx)))
-		{
-		  continue;
-		}
+	      /*if (PGBUF_IS_PRIVATE_LRU_INDEX (lru_idx) && !PGBUF_LRU_LIST_IS_OVER_QUOTA (PGBUF_GET_LRU_LIST (lru_idx)))
+	         {
+	         continue;
+	         } */
 
 	      /* Reserve at least 100 BCBs for victims, since flushing may be slow. */
 	      if (count_flushed_bcb >= max_flushed_bcb)
@@ -8282,12 +8281,11 @@ pgbuf_get_victim_from_flushed_pages (THREAD_ENTRY * thread_p)
 	{
 	  /* bcb is hot. don't assign it as victim */
 	}
-      else if ((pgbuf_Pool.quota.is_adjusting == 0)
-	       && PGBUF_IS_PRIVATE_LRU_INDEX (pgbuf_bcb_get_lru_index (bcb_flushed))
-	       && !PGBUF_LRU_LIST_IS_OVER_QUOTA (pgbuf_lru_list_from_bcb (bcb_flushed)))
-	{
-	  /* bcb belongs to a private list under quota. give it a chance. */
-	}
+      //     else if (PGBUF_IS_PRIVATE_LRU_INDEX (pgbuf_bcb_get_lru_index (bcb_flushed))
+      //       && !PGBUF_LRU_LIST_IS_OVER_QUOTA (pgbuf_lru_list_from_bcb (bcb_flushed)))
+      //{
+      //  /* bcb belongs to a private list under quota. give it a chance. */
+      //}
       else
 	{
 	  assert_release (!pgbuf_bcb_is_direct_victim (bcb_flushed) && bcb_flushed->next_wait_thrd == NULL);
@@ -8389,7 +8387,7 @@ pgbuf_get_victim (THREAD_ENTRY * thread_p)
   bool searched_own = false;
   UINT64 initial_consume_cursor, current_consume_cursor;
   PERF_UTIME_TRACKER perf_tracker = PERF_UTIME_TRACKER_INITIALIZER;
-  
+
 #if defined (SERVER_MODE)
   /* Check whether can get the victim from flushed bcbs. */
   victim = pgbuf_get_victim_from_flushed_pages (thread_p);
@@ -8400,7 +8398,7 @@ pgbuf_get_victim (THREAD_ENTRY * thread_p)
     }
 #endif
 
-  ATOMIC_INC_32(&pgbuf_Pool.monitor.lru_victim_req_cnt, 1);
+  ATOMIC_INC_32 (&pgbuf_Pool.monitor.lru_victim_req_cnt, 1);
 
   /* how this works:
    * we need to find a victim in one of all lru lists. we have two lru list types: private and shared. private are pages
@@ -8432,8 +8430,8 @@ pgbuf_get_victim (THREAD_ENTRY * thread_p)
       lru_list = PGBUF_GET_LRU_LIST (private_lru_idx);
 
       /* don't victimize from own list if it is under quota */
-      if (((pgbuf_Pool.quota.is_adjusting != 0) || PGBUF_LRU_LIST_IS_ONE_TWO_OVER_QUOTA (lru_list)
-	   || PGBUF_LRU_LIST_IS_OVER_QUOTA (lru_list)) && (lru_list->count_vict_cand > 0))
+      if (PGBUF_LRU_LIST_IS_ONE_TWO_OVER_QUOTA (lru_list)
+	  || (PGBUF_LRU_LIST_IS_OVER_QUOTA (lru_list) && lru_list->count_vict_cand > 0))
 	{
 	  if (detailed_perf)
 	    {
@@ -10205,7 +10203,7 @@ copy_unflushed_lsa:
   if (is_page_flush_thread && thread_is_page_post_flush_thread_available ()
       /*&& pgbuf_is_any_thread_waiting_for_direct_victim () */
       && (PGBUF_IS_SHARED_LRU_INDEX (pgbuf_bcb_get_lru_index (bufptr))
-	  || (pgbuf_Pool.quota.is_adjusting != 0) || PGBUF_LRU_LIST_IS_OVER_QUOTA (pgbuf_lru_list_from_bcb (bufptr)))
+	  || PGBUF_LRU_LIST_IS_OVER_QUOTA (pgbuf_lru_list_from_bcb (bufptr)))
       && lf_circular_queue_produce (pgbuf_Pool.flushed_bcbs, &bufptr))
     {
       /* page buffer maintenance thread will try to assign this bcb directly as victim. */
@@ -14720,12 +14718,11 @@ pgbuf_assign_flushed_pages (THREAD_ENTRY * thread_p)
 	{
 	  /* bcb is hot. don't assign it as victim */
 	}
-      else if ((pgbuf_Pool.quota.is_adjusting == 0)
-	       && PGBUF_IS_PRIVATE_LRU_INDEX (pgbuf_bcb_get_lru_index (bcb_flushed))
-	       && !PGBUF_LRU_LIST_IS_OVER_QUOTA (pgbuf_lru_list_from_bcb (bcb_flushed)))
-	{
-	  /* bcb belongs to a private list under quota. give it a chance. */
-	}
+      //     else if (PGBUF_IS_PRIVATE_LRU_INDEX (pgbuf_bcb_get_lru_index (bcb_flushed))
+      //       && !PGBUF_LRU_LIST_IS_OVER_QUOTA (pgbuf_lru_list_from_bcb (bcb_flushed)))
+      //{
+      //  /* bcb belongs to a private list under quota. give it a chance. */
+      //}
       else if (pgbuf_assign_direct_victim (thread_p, bcb_flushed))
 	{
 	  /* assigned directly */
@@ -15705,8 +15702,7 @@ pgbuf_lfcq_get_victim_from_private_lru (THREAD_ENTRY * thread_p, bool restricted
 
   lru_list = PGBUF_GET_LRU_LIST (lru_idx);
   if (PGBUF_LRU_LIST_COUNT (lru_list) > PBGUF_BIG_PRIVATE_MIN_SIZE
-      && ((pgbuf_Pool.quota.is_adjusting != 0) || (PGBUF_LRU_LIST_COUNT (lru_list) > 2 * lru_list->quota))
-      && (lru_list->count_vict_cand > 1))
+      && PGBUF_LRU_LIST_COUNT (lru_list) > 2 * lru_list->quota && lru_list->count_vict_cand > 1)
     {
       /* add big private lists back immediately */
       if (lf_circular_queue_produce (pgbuf_Pool.big_private_lrus_with_victims, &lru_idx))
@@ -15725,8 +15721,7 @@ pgbuf_lfcq_get_victim_from_private_lru (THREAD_ENTRY * thread_p, bool restricted
       return victim;
     }
 
-  if (lru_list->count_vict_cand > 0
-      && ((pgbuf_Pool.quota.is_adjusting != 0) || PGBUF_LRU_LIST_IS_OVER_QUOTA (lru_list)))
+  if (lru_list->count_vict_cand > 0 && PGBUF_LRU_LIST_IS_OVER_QUOTA (lru_list))
     {
       if (lf_circular_queue_produce (pgbuf_Pool.private_lrus_with_victims, &lru_idx))
 	{
