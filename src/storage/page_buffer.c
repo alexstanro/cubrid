@@ -802,7 +802,7 @@ struct pgbuf_buffer_pool
   bool check_for_interrupts;
 
 #if defined(SERVER_MODE)
-  bool is_flushing_victims;	/* flag set true when pgbuf flush thread is flushing victim candidates */
+  volatile bool is_flushing_victims;	/* flag set true when pgbuf flush thread is flushing victim candidates */
   bool is_checkpoint;		/* flag set true when checkpoint is running */
 #endif				/* SERVER_MODE */
 
@@ -3122,7 +3122,7 @@ static int
 pgbuf_get_victim_candidates_from_lru (THREAD_ENTRY * thread_p, int check_count, float lru_sum_flush_priority,
 				      bool * assigned_directly)
 {
-  int lru_idx, victim_cand_count, i, count_flushed_bcb = 0, max_flushed_bcb = 2000;
+  int lru_idx, victim_cand_count, i, count_flushed_bcb = 0, max_flushed_bcb = 3000;
   PGBUF_BCB *bufptr;
   int check_count_this_lru;
   float victim_flush_priority_this_lru;
@@ -3188,7 +3188,7 @@ pgbuf_get_victim_candidates_from_lru (THREAD_ENTRY * thread_p, int check_count, 
 	         continue;
 	         } */
 
-	      /* Reserve at least 100 BCBs for victims, since flushing may be slow. */
+	      /* Reserve at least 3000 BCBs for victims, since flushing may be slow. */
 	      if (count_flushed_bcb >= max_flushed_bcb)
 		{
 		  if (lf_circular_queue_approx_size (pgbuf_Pool.flushed_bcbs) < max_flushed_bcb)
@@ -8367,7 +8367,9 @@ pgbuf_get_victim (THREAD_ENTRY * thread_p)
   bool searched_own = false;
   UINT64 initial_consume_cursor, current_consume_cursor;
   PERF_UTIME_TRACKER perf_tracker = PERF_UTIME_TRACKER_INITIALIZER;
+  int curr_waits_for_flush = 0, max_waits_for_flush = 5;
 
+start_get_victim:
 #if defined (SERVER_MODE)
   /* Check whether can get the victim from flushed bcbs. */
   victim = pgbuf_get_victim_from_flushed_pages (thread_p);
@@ -8376,6 +8378,16 @@ pgbuf_get_victim (THREAD_ENTRY * thread_p)
       perfmon_inc_stat (thread_p, PSTAT_PB_NUM_GET_VICTIM_FROM_FLUSHED_PAGE);
       return victim;
     }
+#endif
+
+#if defined (SERVER_MODE)
+  if (pgbuf_Pool.is_flushing_victims && (curr_waits_for_flush < max_waits_for_flush));
+  {
+    /* Do not search while flushing. */
+    thread_sleep (10);
+    curr_waits_for_flush++;
+    goto start_get_victim;
+  }
 #endif
 
   ATOMIC_INC_32 (&pgbuf_Pool.monitor.lru_victim_req_cnt, 1);
