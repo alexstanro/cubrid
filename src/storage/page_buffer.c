@@ -8381,13 +8381,13 @@ start_get_victim:
 #endif
 
 #if defined (SERVER_MODE)
-  if (pgbuf_Pool.is_flushing_victims && (curr_waits_for_flush < max_waits_for_flush));
-  {
-    /* Do not search while flushing. */
-    thread_sleep (10);
-    curr_waits_for_flush++;
-    goto start_get_victim;
-  }
+  if (pgbuf_Pool.is_flushing_victims && (curr_waits_for_flush < max_waits_for_flush))
+    {
+      /* Do not search while flushing. */
+      thread_sleep (10);
+      curr_waits_for_flush++;
+      goto start_get_victim;
+    }
 #endif
 
   ATOMIC_INC_32 (&pgbuf_Pool.monitor.lru_victim_req_cnt, 1);
