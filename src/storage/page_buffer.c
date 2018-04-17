@@ -8389,8 +8389,7 @@ pgbuf_get_victim (THREAD_ENTRY * thread_p)
   bool searched_own = false;
   UINT64 initial_consume_cursor, current_consume_cursor;
   PERF_UTIME_TRACKER perf_tracker = PERF_UTIME_TRACKER_INITIALIZER;
-
-  ATOMIC_INC_32 (&pgbuf_Pool.monitor.lru_victim_req_cnt, 1);
+  
 #if defined (SERVER_MODE)
   /* Check whether can get the victim from flushed bcbs. */
   victim = pgbuf_get_victim_from_flushed_pages (thread_p);
@@ -8400,6 +8399,8 @@ pgbuf_get_victim (THREAD_ENTRY * thread_p)
       return victim;
     }
 #endif
+
+  ATOMIC_INC_32(&pgbuf_Pool.monitor.lru_victim_req_cnt, 1);
 
   /* how this works:
    * we need to find a victim in one of all lru lists. we have two lru list types: private and shared. private are pages
