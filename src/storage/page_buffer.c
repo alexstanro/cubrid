@@ -13698,6 +13698,8 @@ pgbuf_adjust_quotas (THREAD_ENTRY * thread_p)
 
 	      pthread_mutex_unlock (&lru_list->mutex);
 	      PGBUF_BCB_CHECK_MUTEX_LEAKS ();
+
+	      perfmon_add_stat (thread_p, PSTAT_PB_NUM_VICTIM_CANDIDATES_UNDER_QUOTA, lru_list->count_lru3);
 	    }
 	  else
 	    {

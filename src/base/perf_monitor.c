@@ -445,6 +445,7 @@ PSTAT_METADATA pstat_Metadata[] = {
   PSTAT_METADATA_INIT_SINGLE_ACC (PSTAT_PB_FLUSH_SEND_DIRTY_TO_POST_FLUSH, "Num_data_page_dirty_to_post_flush"),
   PSTAT_METADATA_INIT_SINGLE_ACC (PSTAT_PB_NUM_SKIPPED_FLUSH, "Num_data_page_skipped_flush"),
   PSTAT_METADATA_INIT_SINGLE_ACC (PSTAT_PB_NUM_GET_VICTIM_FROM_FLUSHED_PAGE, "Num_get_victim_from_flushed_page"),
+  PSTAT_METADATA_INIT_SINGLE_ACC (PSTAT_PB_NUM_VICTIM_CANDIDATES_UNDER_QUOTA, "Num_victim_candidates_under_quota"),
 
   PSTAT_METADATA_INIT_SINGLE_ACC (PSTAT_PB_NUM_SKIPPED_NEED_WAL, "Num_data_page_skipped_flush_need_wal"),
   PSTAT_METADATA_INIT_SINGLE_ACC (PSTAT_PB_NUM_SKIPPED_ALREADY_FLUSHED, "Num_data_page_skipped_flush_already_flushed"),
