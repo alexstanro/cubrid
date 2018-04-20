@@ -9663,7 +9663,7 @@ pgbuf_lru_move_from_private_to_shared (THREAD_ENTRY * thread_p, PGBUF_BCB * bcb)
 STATIC_INLINE void
 pgbuf_remove_from_lru_list (THREAD_ENTRY * thread_p, PGBUF_BCB * bufptr, PGBUF_LRU_LIST * lru_list)
 {
-  PGBUF_BCB *bcb_prev = NULL;
+  PGBUF_BCB *bcb_prev = NULL, *next_victim_candidate_under_quota = NULL;
 
   if (lru_list->top == bufptr)
     {
@@ -9704,10 +9704,17 @@ pgbuf_remove_from_lru_list (THREAD_ENTRY * thread_p, PGBUF_BCB * bufptr, PGBUF_L
       bcb_prev->next_BCB = bufptr->next_BCB;
     }
 
+  next_victim_candidate_under_quota = bufptr->next_BCB;
   bufptr->prev_BCB = NULL;
   bufptr->next_BCB = NULL;
 
-  (void) ATOMIC_CAS_ADDR (&lru_list->last_victim_candidate_under_quota, bufptr, (PGBUF_BCB *) NULL);
+  if (lru_list->last_victim_candidate_under_quota == bufptr)
+    {
+      /* Set new victim candidate under quota to next BCB or NULL. */
+      assert ((next_victim_candidate_under_quota == NULL)
+	      || PGBUF_IS_BCB_IN_LRU_VICTIM_ZONE (next_victim_candidate_under_quota));
+      (void) ATOMIC_CAS_ADDR (&lru_list->last_victim_candidate_under_quota, bufptr, next_victim_candidate_under_quota);
+    }
 
   /* we need to update the victim hint now, since bcb has been disconnected from list.
    * pgbuf_lru_remove_victim_candidate will not which is the previous BCB. we cannot change the hint before
