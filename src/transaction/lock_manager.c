@@ -462,7 +462,7 @@ static int lock_initialize_object_hash_table (void);
 static int lock_initialize_object_lock_res_list (void);
 static int lock_initialize_object_lock_entry_list (void);
 static int lock_initialize_deadlock_detection (void);
-static int lock_remove_resource (THREAD_ENTRY * thread_p, LK_RES * res_ptr);
+static int lock_remove_resource (THREAD_ENTRY * thread_p, LK_RES * res_ptr, bool cond_lock, bool has_mutex);
 static void lock_insert_into_tran_hold_list (LK_ENTRY * entry_ptr, int owner_tran_index);
 static int lock_delete_from_tran_hold_list (LK_ENTRY * entry_ptr, int owner_tran_index);
 static void lock_insert_into_tran_non2pl_list (LK_ENTRY * non2pl, int owner_tran_index);
@@ -491,8 +491,8 @@ static int lock_internal_hold_lock_object_instant (THREAD_ENTRY * thread_p, int 
 static int lock_internal_perform_lock_object (THREAD_ENTRY * thread_p, int tran_index, const OID * oid,
 					      const OID * class_oid, LOCK lock, int wait_msecs,
 					      LK_ENTRY ** entry_addr_ptr, LK_ENTRY * class_entry);
-static void lock_internal_perform_unlock_object (THREAD_ENTRY * thread_p, LK_ENTRY * entry_ptr, bool release_flag,
-						 bool move_to_non2pl);
+static bool lock_internal_perform_unlock_object (THREAD_ENTRY * thread_p, LK_ENTRY * entry_ptr, bool release_flag,
+						 bool move_to_non2pl, bool cond_remove_resource);
 static void lock_unlock_object_by_isolation (THREAD_ENTRY * thread_p, int tran_index, TRAN_ISOLATION isolation,
 					     const OID * class_oid, const OID * oid);
 static void lock_unlock_inst_locks_of_class_by_isolation (THREAD_ENTRY * thread_p, int tran_index,
@@ -1202,18 +1202,29 @@ lock_initialize_deadlock_detection (void)
  * Note:This function removes the given lock resource entry from lock hash table.
  */
 static int
-lock_remove_resource (THREAD_ENTRY * thread_p, LK_RES * res_ptr)
+lock_remove_resource (THREAD_ENTRY * thread_p, LK_RES * res_ptr, bool cond_lock, bool has_mutex)
 {
   LF_TRAN_ENTRY *t_entry = thread_get_tran_entry (thread_p, THREAD_TS_OBJ_LOCK_RES);
   int success = 0, rc;
 
-  rc = lf_hash_delete_already_locked (t_entry, &lk_Gl.obj_hash_table, (void *) &res_ptr->key, res_ptr, &success);
+  /* TO DO - simplify it */
+  if (cond_lock == false)
+    {
+      assert (has_mutex == true);
+
+      rc = lf_hash_delete_already_locked (t_entry, &lk_Gl.obj_hash_table, (void *) &res_ptr->key, res_ptr, &success);
+      assert_release (success == 1);
+    }
+  else
+    {
+      rc = lf_hash_delete_cond (t_entry, &lk_Gl.obj_hash_table, (void *) &res_ptr->key, res_ptr, has_mutex, &success);
+    }
+
   if (!success)
     {
       /* this should not happen, as the hash entry is mutex protected and no clear operations are performed on the hash
        * table */
       pthread_mutex_unlock (&res_ptr->res_mutex);
-      assert_release (false);
       return ER_FAILED;
     }
   else
@@ -3049,7 +3060,7 @@ lock_escalate_if_needed (THREAD_ENTRY * thread_p, LK_ENTRY * class_entry, int tr
 	}
 
       /* 2. release original class lock only one time in order to maintain original class lock count */
-      lock_internal_perform_unlock_object (thread_p, class_entry, false, true);
+      (void) lock_internal_perform_unlock_object (thread_p, class_entry, false, true, false);
     }
 
   /* reset lock_escalation_on */
@@ -3868,7 +3879,7 @@ blocked:
     {
       /* Following three cases are possible. 1. lock timeout 2. deadlock victim 3. interrupt In any case, current
        * thread must remove the wait info. */
-      lock_internal_perform_unlock_object (thread_p, entry_ptr, false, false);
+      (void) lock_internal_perform_unlock_object (thread_p, entry_ptr, false, false, false);
 
       if (ret_val == LOCK_RESUMED_ABORTED)
 	{
@@ -3964,9 +3975,9 @@ end:
  *     if release_flag is true, release the lock item.
  *     Otherwise, just decrement the lock count for supporting isolation level.
  */
-static void
+static bool
 lock_internal_perform_unlock_object (THREAD_ENTRY * thread_p, LK_ENTRY * entry_ptr, bool release_flag,
-				     bool move_to_non2pl)
+				     bool move_to_non2pl, bool cond_remove_resource)
 {
   LF_TRAN_ENTRY *t_entry = thread_get_tran_entry (thread_p, THREAD_TS_OBJ_LOCK_ENT);
   int tran_index;
@@ -3976,6 +3987,7 @@ lock_internal_perform_unlock_object (THREAD_ENTRY * thread_p, LK_ENTRY * entry_p
   LK_ENTRY *from_whom;
   LOCK mode;
   int rv;
+  bool needs_remove_resource = false;
 
 #if defined(LK_DUMP)
   if (lk_Gl.dump_level >= 1)
@@ -3993,14 +4005,14 @@ lock_internal_perform_unlock_object (THREAD_ENTRY * thread_p, LK_ENTRY * entry_p
     {
       er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_LK_BAD_ARGUMENT, 2, "lk_internal_unlock_object",
 	      "NULL entry pointer");
-      return;
+      return false;
     }
 
   tran_index = LOG_FIND_THREAD_TRAN_INDEX (thread_p);
   if (entry_ptr->tran_index != tran_index)
     {
       assert (false);
-      return;
+      return false;
     }
 
   if (release_flag == false)
@@ -4014,7 +4026,7 @@ lock_internal_perform_unlock_object (THREAD_ENTRY * thread_p, LK_ENTRY * entry_p
 
       if (entry_ptr->blocked_mode == NULL_LOCK && entry_ptr->count > 0)
 	{
-	  return;
+	  return false;
 	}
     }
 
@@ -4096,7 +4108,7 @@ lock_internal_perform_unlock_object (THREAD_ENTRY * thread_p, LK_ENTRY * entry_p
 
       pthread_mutex_unlock (&res_ptr->res_mutex);
 
-      return;
+      return false;
     }
 
   /* The transaction is in the holder list. Consult the holder list. */
@@ -4153,7 +4165,10 @@ lock_internal_perform_unlock_object (THREAD_ENTRY * thread_p, LK_ENTRY * entry_p
       if (res_ptr->non2pl == NULL)
 	{
 	  /* if resource entry is empty, remove it. */
-	  (void) lock_remove_resource (thread_p, res_ptr);
+          if (lock_remove_resource(thread_p, res_ptr, cond_remove_resource, true) != NO_ERROR)
+            {
+              needs_remove_resource = true;
+            }
 	}
       else
 	{
@@ -4168,6 +4183,8 @@ lock_internal_perform_unlock_object (THREAD_ENTRY * thread_p, LK_ENTRY * entry_p
       (void) lock_grant_blocked_waiter (thread_p, res_ptr);
       pthread_mutex_unlock (&res_ptr->res_mutex);
     }
+
+  return needs_remove_resource;
 }
 #endif /* SERVER_MODE */
 
@@ -4433,7 +4450,7 @@ lock_unlock_shared_inst_lock (THREAD_ENTRY * thread_p, int tran_index, const OID
 
   if (entry_ptr != NULL && entry_ptr->granted_mode == S_LOCK)
     {
-      lock_internal_perform_unlock_object (thread_p, entry_ptr, false, true);
+      (void) lock_internal_perform_unlock_object (thread_p, entry_ptr, false, true, false);
     }
 }
 #endif /* SERVER_MODE */
@@ -4469,7 +4486,7 @@ lock_remove_all_class_locks (THREAD_ENTRY * thread_p, int tran_index, LOCK lock)
       next = curr->tran_next;
       if (curr->granted_mode <= lock)
 	{
-	  lock_internal_perform_unlock_object (thread_p, curr, true, false);
+	  (void) lock_internal_perform_unlock_object (thread_p, curr, true, false, false);
 	}
       curr = next;
     }
@@ -4482,7 +4499,7 @@ lock_remove_all_class_locks (THREAD_ENTRY * thread_p, int tran_index, LOCK lock)
 
       if (curr->granted_mode <= lock)
 	{
-	  lock_internal_perform_unlock_object (thread_p, curr, true, false);
+	  (void) lock_internal_perform_unlock_object (thread_p, curr, true, false, false);
 	}
     }
 
@@ -4521,7 +4538,7 @@ lock_remove_all_inst_locks (THREAD_ENTRY * thread_p, int tran_index, const OID *
 	  if (curr->granted_mode <= lock || lock == X_LOCK)
 	    {
 	      /* found : the same class_oid and interesting lock mode --> unlock it. */
-	      lock_internal_perform_unlock_object (thread_p, curr, true, false);
+	      (void) lock_internal_perform_unlock_object (thread_p, curr, true, false, false);
 	    }
 	}
       curr = next;
@@ -4594,7 +4611,7 @@ lock_remove_non2pl (THREAD_ENTRY * thread_p, LK_ENTRY * non2pl, int tran_index)
 
   if (res_ptr->holder == NULL && res_ptr->waiter == NULL && res_ptr->non2pl == NULL)
     {
-      (void) lock_remove_resource (thread_p, res_ptr);
+      (void) lock_remove_resource (thread_p, res_ptr, false, true);
     }
   else
     {
@@ -6830,7 +6847,7 @@ lock_unlock_object_lock_internal (THREAD_ENTRY * thread_p, const OID * oid, cons
 
   if (entry_ptr != NULL)
     {
-      lock_internal_perform_unlock_object (thread_p, entry_ptr, release_flag, move_to_non2pl);
+      (void) lock_internal_perform_unlock_object (thread_p, entry_ptr, release_flag, move_to_non2pl, false);
     }
 #endif
 }
@@ -6913,7 +6930,7 @@ lock_unlock_object (THREAD_ENTRY * thread_p, const OID * oid, const OID * class_
 
       if (entry_ptr != NULL)
 	{
-	  lock_internal_perform_unlock_object (thread_p, entry_ptr, false, true);
+	  (void) lock_internal_perform_unlock_object (thread_p, entry_ptr, false, true, false);
 	}
 
 #if defined(ENABLE_SYSTEMTAP)
@@ -7106,12 +7123,27 @@ lock_unlock_all (THREAD_ENTRY * thread_p)
 
   return;
 #else /* !SERVER_MODE */
-  int tran_index;
+#define MAX_RESOURCE_TO_REMOVE 20
+  LK_ENTRY *res_to_remove[MAX_RESOURCE_TO_REMOVE];
+  int index_res_to_remove = -1, num_index_to_remove = 0, iter = 0;
+  int tran_index, i;
   LK_TRAN_LOCK *tran_lock;
   LK_ENTRY *entry_ptr;
-
+  bool cond_remove_resource;
+  bool needs_remove_resource;
+  
   tran_index = LOG_FIND_THREAD_TRAN_INDEX (thread_p);
   tran_lock = &lk_Gl.tran_lock_table[tran_index];
+  
+  if (tran_lock->inst_hold_count + tran_lock->class_hold_count + 1 <= MAX_RESOURCE_TO_REMOVE)
+    {
+      cond_remove_resource = true;
+    }
+  else
+    {
+      /* Avoid reallocatin and checks. */
+      cond_remove_resource = false;
+    }
 
   /* remove all instance locks */
   entry_ptr = tran_lock->inst_hold_list;
@@ -7119,7 +7151,11 @@ lock_unlock_all (THREAD_ENTRY * thread_p)
     {
       assert (tran_index == entry_ptr->tran_index);
 
-      lock_internal_perform_unlock_object (thread_p, entry_ptr, true, false);
+      needs_remove_resource = lock_internal_perform_unlock_object (thread_p, entry_ptr, true, false, cond_remove_resource);
+      if (needs_remove_resource == true)
+        {
+          res_to_remove[++index_res_to_remove] = entry_ptr;
+        }
       entry_ptr = tran_lock->inst_hold_list;
     }
 
@@ -7129,7 +7165,11 @@ lock_unlock_all (THREAD_ENTRY * thread_p)
     {
       assert (tran_index == entry_ptr->tran_index);
 
-      lock_internal_perform_unlock_object (thread_p, entry_ptr, true, false);
+      needs_remove_resource = lock_internal_perform_unlock_object (thread_p, entry_ptr, true, false, cond_remove_resource);
+      if (needs_remove_resource == true)
+        {
+          res_to_remove[++index_res_to_remove] = entry_ptr;
+        }
       entry_ptr = tran_lock->class_hold_list;
     }
 
@@ -7139,8 +7179,12 @@ lock_unlock_all (THREAD_ENTRY * thread_p)
     {
       assert (tran_index == entry_ptr->tran_index);
 
-      lock_internal_perform_unlock_object (thread_p, entry_ptr, true, false);
-    }
+      needs_remove_resource = lock_internal_perform_unlock_object (thread_p, entry_ptr, true, false, cond_remove_resource);
+      if (needs_remove_resource == true)
+        {
+          res_to_remove[++index_res_to_remove] = entry_ptr;
+        }
+    }  
 
   /* remove non2pl locks */
   while (tran_lock->non2pl_list != NULL)
@@ -7156,8 +7200,33 @@ lock_unlock_all (THREAD_ENTRY * thread_p)
 	  tran_lock->num_incons_non2pl -= 1;
 	}
       /* remove the non2pl entry from resource non2pl list and free it */
+      /* TODO - check for resource remove */
       lock_remove_non2pl (thread_p, entry_ptr, tran_index);
     }
+
+  iter = 0;
+  num_index_to_remove = index_res_to_remove + 1;
+  while (num_index_to_remove > 0)
+    {      
+      for (i = 0; i <= index_res_to_remove; i++)
+        {
+          if (res_to_remove[i] != NULL)
+            {
+              if (lock_remove_resource (thread_p, res_to_remove[i]->res_head, cond_remove_resource, false) == NO_ERROR)
+                {
+                  res_to_remove[i] = NULL;
+                  num_index_to_remove--;
+                }
+            }
+        }
+
+      assert(cond_remove_resource == true || num_index_to_remove == 0);
+      iter++;
+      if (iter >= 10)
+        {
+          cond_remove_resource = false;
+        }
+    }  
 
   lock_clear_deadlock_victim (tran_index);
 
@@ -9214,7 +9283,7 @@ lock_stop_instant_lock_mode (THREAD_ENTRY * thread_p, int tran_index, bool need_
 	  assert_release (count >= 0);
 	  while (count > 0)
 	    {
-	      lock_internal_perform_unlock_object (thread_p, entry_ptr, false, true);
+	      (void) lock_internal_perform_unlock_object (thread_p, entry_ptr, false, true, false);
 	      count--;
 	    }
 	}
@@ -9236,7 +9305,7 @@ lock_stop_instant_lock_mode (THREAD_ENTRY * thread_p, int tran_index, bool need_
 	  assert_release (count >= 0);
 	  while (count > 0)
 	    {
-	      lock_internal_perform_unlock_object (thread_p, entry_ptr, false, true);
+	      (void) lock_internal_perform_unlock_object (thread_p, entry_ptr, false, true, false);
 	      count--;
 	    }
 	}
@@ -9257,7 +9326,7 @@ lock_stop_instant_lock_mode (THREAD_ENTRY * thread_p, int tran_index, bool need_
 	  assert_release (count >= 0);
 	  while (count > 0)
 	    {
-	      lock_internal_perform_unlock_object (thread_p, entry_ptr, false, true);
+	      (void) lock_internal_perform_unlock_object (thread_p, entry_ptr, false, true, false);
 	      count--;
 	    }
 	}
