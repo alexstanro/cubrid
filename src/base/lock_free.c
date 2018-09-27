@@ -1744,21 +1744,16 @@ restart_search:
 	      LF_UNITTEST_INC (&lf_list_deletes_fail_mark_next, 1);
 
 	      LF_END_TRAN_FORCE ();
-	      if (behavior_flags)
+	      if (behavior_flags && (*behavior_flags & LF_LIST_BF_RETURN_ON_RESTART))
 		{
-		  if (*behavior_flags & LF_LIST_BF_DELETE_COND)
-		    {
-		      return NO_ERROR;
-		    }
-		  else if (*behavior_flags & LF_LIST_BF_RETURN_ON_RESTART)
-		    {
-		      *behavior_flags = (*behavior_flags) | LF_LIST_BR_RESTARTED;
-		      assert ((*behavior_flags) & LF_LIST_BR_RESTARTED);
-		      return NO_ERROR;
-		    }
+		  *behavior_flags = (*behavior_flags) | LF_LIST_BR_RESTARTED;
+		  assert ((*behavior_flags) & LF_LIST_BR_RESTARTED);
+		  return NO_ERROR;
 		}
-
-	      goto restart_search;
+	      else
+		{
+		  goto restart_search;
+		}
 	    }
 
 	  /* lock mutex if necessary */
@@ -2173,22 +2168,6 @@ lf_hash_delete_already_locked (LF_TRAN_ENTRY * tran, LF_HASH_TABLE * table, void
   assert (locked_entry != NULL);
   assert (table->entry_desc->using_mutex);
   return lf_hash_delete_internal (tran, table, key, locked_entry, LF_LIST_BF_RETURN_ON_RESTART, success);
-}
-
-int
-lf_hash_delete_cond (LF_TRAN_ENTRY * tran, LF_HASH_TABLE * table, void *key, void *locked_entry, bool has_mutex, int *success)
-{
-  int bflags;
-  assert (locked_entry != NULL);
-  assert (table->entry_desc->using_mutex);
-
-  bflags = LF_LIST_BF_DELETE_COND;
-  if (!has_mutex)
-    {
-      bflags |= LF_LIST_BF_LOCK_ON_DELETE;
-    }
-
-  return lf_hash_delete_internal (tran, table, key, locked_entry, bflags, success);
 }
 
 /*

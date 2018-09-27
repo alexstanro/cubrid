@@ -321,7 +321,6 @@ extern int lf_io_list_find_or_insert (void **list_p, void *new_entry, LF_ENTRY_D
 #define LF_LIST_BF_INSERT_GIVEN		  ((int) 0x04)
 #define LF_LIST_BF_FIND_OR_INSERT	  ((int) 0x08)
 #define LF_LIST_BF_LOCK_ON_DELETE	  ((int) 0x10)
-#define LF_LIST_BF_DELETE_COND	          ((int) 0x20)
 #define LF_LIST_BF_IS_FLAG_SET(bf, flag) ((*(bf) & (flag)) != 0)
 #define LF_LIST_BF_SET_FLAG(bf, flag) (*(bf) = *(bf) | (flag))
 
@@ -376,8 +375,6 @@ extern int lf_hash_insert_given (LF_TRAN_ENTRY * tran, LF_HASH_TABLE * table, vo
 extern int lf_hash_delete (LF_TRAN_ENTRY * tran, LF_HASH_TABLE * table, void *key, int *success);
 extern int lf_hash_delete_already_locked (LF_TRAN_ENTRY * tran, LF_HASH_TABLE * table, void *key, void *locked_entry,
 					  int *success);
-extern int lf_hash_delete_cond (LF_TRAN_ENTRY * tran, LF_HASH_TABLE * table, void *key, void *locked_entry,
-				bool has_mmutex, int *success);
 extern void lf_hash_clear (LF_TRAN_ENTRY * tran, LF_HASH_TABLE * table);
 
 /*
