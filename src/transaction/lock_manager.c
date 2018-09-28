@@ -3975,6 +3975,7 @@ lock_internal_perform_unlock_object (THREAD_ENTRY * thread_p, int tran_index, LK
   LK_ENTRY *from_whom;
   LOCK mode;
   int rv;
+  PERF_UTIME_TRACKER time_track;
 
 #if defined(LK_DUMP)
   if (lk_Gl.dump_level >= 1)
@@ -4011,6 +4012,8 @@ lock_internal_perform_unlock_object (THREAD_ENTRY * thread_p, int tran_index, LK
 	  return;
 	}
     }
+
+  PERF_UTIME_TRACKER_START (thread_p, &time_track);
 
   /* hold resource mutex */
   res_ptr = entry_ptr->res_head;
@@ -4060,7 +4063,9 @@ lock_internal_perform_unlock_object (THREAD_ENTRY * thread_p, int tran_index, LK
 	    }
 
 	  /* free the lock entry */
+	  PERF_UTIME_TRACKER_TIME_AND_RESTART (thread_p, &time_track, PSTAT_LOCK_UNLOCK_OBJECT_TIME_COUNTERS);
 	  lock_free_entry (tran_index, t_entry, &lk_Gl.obj_free_entry_list, curr);
+	  PERF_UTIME_TRACKER_TIME_AND_RESTART (thread_p, &time_track, PSTAT_LOCK_UNLOCK_OBJECT_LF_TIME_COUNTERS);
 
 	  if (from_whom != NULL)
 	    {
@@ -4089,7 +4094,7 @@ lock_internal_perform_unlock_object (THREAD_ENTRY * thread_p, int tran_index, LK
 	}
 
       pthread_mutex_unlock (&res_ptr->res_mutex);
-
+      PERF_UTIME_TRACKER_TIME_AND_RESTART (thread_p, &time_track, PSTAT_LOCK_UNLOCK_OBJECT_TIME_COUNTERS);
       return;
     }
 
@@ -4125,7 +4130,9 @@ lock_internal_perform_unlock_object (THREAD_ENTRY * thread_p, int tran_index, LK
 	  (void) lock_add_non2pl_lock (thread_p, res_ptr, tran_index, curr->granted_mode);
 	}
       /* free the lock entry */
+      PERF_UTIME_TRACKER_TIME_AND_RESTART (thread_p, &time_track, PSTAT_LOCK_UNLOCK_OBJECT_TIME_COUNTERS);
       lock_free_entry (tran_index, t_entry, &lk_Gl.obj_free_entry_list, curr);
+      PERF_UTIME_TRACKER_TIME_AND_RESTART (thread_p, &time_track, PSTAT_LOCK_UNLOCK_OBJECT_LF_TIME_COUNTERS);
     }
 
   /* change total_holders_mode */
@@ -4162,6 +4169,8 @@ lock_internal_perform_unlock_object (THREAD_ENTRY * thread_p, int tran_index, LK
       (void) lock_grant_blocked_waiter (thread_p, res_ptr);
       pthread_mutex_unlock (&res_ptr->res_mutex);
     }
+
+  PERF_UTIME_TRACKER_TIME_AND_RESTART (thread_p, &time_track, PSTAT_LOCK_UNLOCK_OBJECT_TIME_COUNTERS);
 }
 #endif /* SERVER_MODE */
 
