@@ -3975,7 +3975,6 @@ lock_internal_perform_unlock_object (THREAD_ENTRY * thread_p, int tran_index, LK
   LK_ENTRY *from_whom;
   LOCK mode;
   int rv;
-  PERF_UTIME_TRACKER time_track;
 
 #if defined(LK_DUMP)
   if (lk_Gl.dump_level >= 1)
@@ -4012,8 +4011,6 @@ lock_internal_perform_unlock_object (THREAD_ENTRY * thread_p, int tran_index, LK
 	  return;
 	}
     }
-
-  PERF_UTIME_TRACKER_START (thread_p, &time_track);
 
   /* hold resource mutex */
   res_ptr = entry_ptr->res_head;
@@ -4063,9 +4060,7 @@ lock_internal_perform_unlock_object (THREAD_ENTRY * thread_p, int tran_index, LK
 	    }
 
 	  /* free the lock entry */
-	  PERF_UTIME_TRACKER_TIME_AND_RESTART (thread_p, &time_track, PSTAT_LOCK_UNLOCK_OBJECT_TIME_COUNTERS);
 	  lock_free_entry (tran_index, t_entry, &lk_Gl.obj_free_entry_list, curr);
-	  PERF_UTIME_TRACKER_TIME_AND_RESTART (thread_p, &time_track, PSTAT_LOCK_UNLOCK_OBJECT_LF_TIME_COUNTERS);
 
 	  if (from_whom != NULL)
 	    {
@@ -4094,7 +4089,6 @@ lock_internal_perform_unlock_object (THREAD_ENTRY * thread_p, int tran_index, LK
 	}
 
       pthread_mutex_unlock (&res_ptr->res_mutex);
-      PERF_UTIME_TRACKER_TIME_AND_RESTART (thread_p, &time_track, PSTAT_LOCK_UNLOCK_OBJECT_TIME_COUNTERS);
       return;
     }
 
@@ -4130,9 +4124,7 @@ lock_internal_perform_unlock_object (THREAD_ENTRY * thread_p, int tran_index, LK
 	  (void) lock_add_non2pl_lock (thread_p, res_ptr, tran_index, curr->granted_mode);
 	}
       /* free the lock entry */
-      PERF_UTIME_TRACKER_TIME_AND_RESTART (thread_p, &time_track, PSTAT_LOCK_UNLOCK_OBJECT_TIME_COUNTERS);
       lock_free_entry (tran_index, t_entry, &lk_Gl.obj_free_entry_list, curr);
-      PERF_UTIME_TRACKER_TIME_AND_RESTART (thread_p, &time_track, PSTAT_LOCK_UNLOCK_OBJECT_LF_TIME_COUNTERS);
     }
 
   /* change total_holders_mode */
@@ -4170,7 +4162,6 @@ lock_internal_perform_unlock_object (THREAD_ENTRY * thread_p, int tran_index, LK
       pthread_mutex_unlock (&res_ptr->res_mutex);
     }
 
-  PERF_UTIME_TRACKER_TIME_AND_RESTART (thread_p, &time_track, PSTAT_LOCK_UNLOCK_OBJECT_TIME_COUNTERS);
 }
 #endif /* SERVER_MODE */
 
@@ -7129,7 +7120,7 @@ lock_unlock_classes_lock_hint (THREAD_ENTRY * thread_p, LC_LOCKHINT * lockhint)
  *      This function must be called at the end of the transaction.
  */
 void
-lock_unlock_all (THREAD_ENTRY * thread_p)
+lock_unlock_all (THREAD_ENTRY * thread_p, bool aborted)
 {
 #if !defined (SERVER_MODE)
   lk_Standalone_has_xlock = false;
@@ -7140,6 +7131,8 @@ lock_unlock_all (THREAD_ENTRY * thread_p)
   int tran_index;
   LK_TRAN_LOCK *tran_lock;
   LK_ENTRY *entry_ptr;
+  bool remove_class_lock;
+  lk_res *res;
 
   tran_index = LOG_FIND_THREAD_TRAN_INDEX (thread_p);
   tran_lock = &lk_Gl.tran_lock_table[tran_index];
@@ -7154,22 +7147,49 @@ lock_unlock_all (THREAD_ENTRY * thread_p)
       entry_ptr = tran_lock->inst_hold_list;
     }
 
-  /* remove all class locks */
-  entry_ptr = tran_lock->class_hold_list;
-  while (entry_ptr != NULL)
+  if (aborted)
     {
-      assert (tran_index == entry_ptr->tran_index);
-
-      lock_internal_perform_unlock_object (thread_p, tran_index, entry_ptr, true, false);
+      remove_class_lock = true;
+    }
+  else
+    {
+      remove_class_lock = false;
       entry_ptr = tran_lock->class_hold_list;
+      while (entry_ptr != NULL)
+	{
+	  if (entry_ptr->granted_mode > IX_LOCK)
+	    {
+	      remove_class_lock = true;
+	      break;
+	    }
+	  else
+	    {
+	      res = ATOMIC_INC_64 (&entry_ptr->res_head, 0LL);
+	      if (res != NULL && res->total_waiters_mode != NULL_LOCK)
+		{
+		  remove_class_lock = true;
+		  break;
+		}
+	    }
+
+	  entry_ptr = entry_ptr->tran_next;
+	}
     }
 
-  /* remove root class lock */
-  entry_ptr = tran_lock->root_class_hold;
-  if (entry_ptr != NULL)
-    {
-      assert (tran_index == entry_ptr->tran_index);
 
+  if (remove_class_lock)
+    {
+      /* remove all class locks */
+      entry_ptr = tran_lock->class_hold_list;
+      while (entry_ptr != NULL)
+	{
+	  assert (tran_index == entry_ptr->tran_index);
+	  lock_internal_perform_unlock_object (thread_p, tran_index, entry_ptr, true, false);
+	  entry_ptr = tran_lock->class_hold_list;
+	}
+
+      /* remove root class lock */
+      entry_ptr = tran_lock->root_class_hold;
       lock_internal_perform_unlock_object (thread_p, tran_index, entry_ptr, true, false);
     }
 
