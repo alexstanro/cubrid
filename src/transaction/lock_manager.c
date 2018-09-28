@@ -347,7 +347,6 @@ struct lk_global_data
   int max_obj_locks;		/* max # of object locks */
 
   LF_HASH_TABLE obj_hash_table;
-  LF_HASH_TABLE class_obj_hash_table;
   LF_FREELIST obj_free_res_list;
   LF_FREELIST obj_free_entry_list;
 
@@ -376,7 +375,7 @@ struct lk_global_data
 };
 
 LK_GLOBAL_DATA lk_Gl = {
-  0, LF_HASH_TABLE_INITIALIZER, LF_HASH_TABLE_INITIALIZER,
+  0, LF_HASH_TABLE_INITIALIZER,
   LF_FREELIST_INITIALIZER, LF_FREELIST_INITIALIZER,
   0, NULL, PTHREAD_MUTEX_INITIALIZER, {0, 0},
   NULL, NULL, 0, 0, 0, 0, false, {0}
@@ -1086,12 +1085,6 @@ lock_initialize_object_hash_table (void)
       return ret;
     }
 
-  ret = lf_hash_init (&lk_Gl.class_obj_hash_table, &lk_Gl.obj_free_res_list, obj_hash_size, &obj_lock_res_desc);
-  if (ret != NO_ERROR)
-    {
-      return ret;
-    }
-
   return NO_ERROR;
 }
 #endif /* SERVER_MODE */
@@ -1213,18 +1206,8 @@ lock_remove_resource (THREAD_ENTRY * thread_p, LK_RES * res_ptr)
 {
   LF_TRAN_ENTRY *t_entry = thread_get_tran_entry (thread_p, THREAD_TS_OBJ_LOCK_RES);
   int success = 0, rc;
-  LF_HASH_TABLE *lf_hash;
 
-  if (res_ptr->key.type == LOCK_RESOURCE_INSTANCE || res_ptr->key.type == LOCK_RESOURCE_OBJECT)
-    {      
-      lf_hash = &lk_Gl.obj_hash_table;
-    }
-  else
-    {
-      lf_hash = &lk_Gl.class_obj_hash_table;
-    }
-  
-  rc = lf_hash_delete_already_locked(t_entry, lf_hash, (void *)&res_ptr->key, res_ptr, &success);
+  rc = lf_hash_delete_already_locked (t_entry, &lk_Gl.obj_hash_table, (void *) &res_ptr->key, res_ptr, &success);
   if (!success)
     {
       /* this should not happen, as the hash entry is mutex protected and no clear operations are performed on the hash
@@ -3111,7 +3094,6 @@ lock_internal_hold_lock_object_instant (THREAD_ENTRY * thread_p, int tran_index,
   LOCK group_mode;
   int rv;
   int compat1, compat2;
-  LF_HASH_TABLE *lf_hash;
 
 #if defined(LK_DUMP)
   if (lk_Gl.dump_level >= 1)
@@ -3136,16 +3118,7 @@ lock_internal_hold_lock_object_instant (THREAD_ENTRY * thread_p, int tran_index,
 
   /* search hash table */
   search_key = lock_create_search_key ((OID *) oid, (OID *) class_oid);
-  if (search_key.type == LOCK_RESOURCE_INSTANCE || search_key.type == LOCK_RESOURCE_OBJECT)
-    {
-     lf_hash = &lk_Gl.obj_hash_table;
-    }
-  else
-    {
-      lf_hash = &lk_Gl.class_obj_hash_table;  
-    }
-  
-  rv = lf_hash_find (t_entry, lf_hash, (void *) &search_key, (void **) &res_ptr);
+  rv = lf_hash_find (t_entry, &lk_Gl.obj_hash_table, (void *) &search_key, (void **) &res_ptr);
   if (rv != NO_ERROR)
     {
       return rv;
@@ -3282,7 +3255,6 @@ lock_internal_perform_lock_object (THREAD_ENTRY * thread_p, int tran_index, cons
   TSC_TICKS start_tick, end_tick;
   TSCTIMEVAL tv_diff;
   UINT64 lock_wait_time;
-  LF_HASH_TABLE * lf_hash;
 
 #if defined(ENABLE_SYSTEMTAP)
   const OID *class_oid_for_marker_p;
@@ -3385,17 +3357,7 @@ start:
 
   /* find or add the lockable object in the lock table */
   search_key = lock_create_search_key ((OID *) oid, (OID *) class_oid);
-
-  if (search_key.type == LOCK_RESOURCE_INSTANCE || search_key.type == LOCK_RESOURCE_OBJECT)
-  {
-    lf_hash = &lk_Gl.obj_hash_table;
-  }
-  else
-  {
-    lf_hash = &lk_Gl.class_obj_hash_table;
-  }
-
-  rv = lf_hash_find_or_insert (t_entry_res, lf_hash, (void *) &search_key, (void **) &res_ptr, NULL);
+  rv = lf_hash_find_or_insert (t_entry_res, &lk_Gl.obj_hash_table, (void *) &search_key, (void **) &res_ptr, NULL);
   if (rv != NO_ERROR)
     {
       return rv;
@@ -6171,7 +6133,6 @@ lock_finalize (void)
 
   /* destroy hash table and freelists */
   lf_hash_destroy (&lk_Gl.obj_hash_table);
-  lf_hash_destroy(&lk_Gl.class_obj_hash_table);
   lf_freelist_destroy (&lk_Gl.obj_free_entry_list);
   lf_freelist_destroy (&lk_Gl.obj_free_res_list);
 
@@ -7229,7 +7190,11 @@ lock_unlock_all (THREAD_ENTRY * thread_p, bool aborted)
 
       /* remove root class lock */
       entry_ptr = tran_lock->root_class_hold;
-      lock_internal_perform_unlock_object (thread_p, tran_index, entry_ptr, true, false);
+      if (entry_ptr != NULL)
+	{
+	  assert (tran_index == entry_ptr->tran_index);
+	  lock_internal_perform_unlock_object (thread_p, tran_index, entry_ptr, true, false);
+	}
     }
 
   /* remove non2pl locks */
@@ -7266,7 +7231,6 @@ lock_find_tran_hold_entry (THREAD_ENTRY * thread_p, int tran_index, const OID * 
   LK_RES *res_ptr;
   LK_ENTRY *entry_ptr;
   int rv;
-  LF_HASH_TABLE * lf_hash;
 
   if (is_class)
     {
@@ -7280,17 +7244,7 @@ lock_find_tran_hold_entry (THREAD_ENTRY * thread_p, int tran_index, const OID * 
       /* override type; we don't insert here, so class_oid is neither passed to us nor needed for the search */
       search_key.type = (is_class ? LOCK_RESOURCE_CLASS : LOCK_RESOURCE_INSTANCE);
     }
-
-  if (search_key.type == LOCK_RESOURCE_INSTANCE || search_key.type == LOCK_RESOURCE_OBJECT)
-    {
-      lf_hash = &lk_Gl.obj_hash_table;
-    }
-  else
-    {
-      lf_hash = &lk_Gl.class_obj_hash_table;
-    }
-
-  rv = lf_hash_find (t_entry, lf_hash, (void *) &search_key, (void **) &res_ptr);
+  rv = lf_hash_find (t_entry, &lk_Gl.obj_hash_table, (void *) &search_key, (void **) &res_ptr);
   if (rv != NO_ERROR)
     {
       return NULL;
@@ -8029,7 +7983,6 @@ lock_detect_local_deadlock (THREAD_ENTRY * thread_p)
   LOCK_COMPATIBILITY compat1, compat2;
   int tran_index;
   FILE *log_fp;
-  LF_HASH_TABLE * lf_hash;
 
   /* initialize deadlock detection related structures */
 
@@ -8063,9 +8016,7 @@ lock_detect_local_deadlock (THREAD_ENTRY * thread_p)
   /* hold the deadlock detection mutex */
   rv = pthread_mutex_lock (&lk_Gl.DL_detection_mutex);
 
-  lf_hash = &lk_Gl.obj_hash_table;
-start:  
-  lf_hash_create_iterator (&iterator, t_entry, lf_hash);
+  lf_hash_create_iterator (&iterator, t_entry, &lk_Gl.obj_hash_table);
   res_ptr = (LK_RES *) lf_hash_iterate (&iterator);
 
   for (; res_ptr != NULL; res_ptr = (LK_RES *) lf_hash_iterate (&iterator))
@@ -8174,12 +8125,6 @@ start:
 	    }
 	}
     }
-
-  if (lf_hash == &lk_Gl.obj_hash_table)
-    {
-      lf_hash = &lk_Gl.class_obj_hash_table;
-      goto start;
-    } 
 
   /* release DL detection mutex */
   pthread_mutex_unlock (&lk_Gl.DL_detection_mutex);
@@ -8851,10 +8796,9 @@ xlock_dump (THREAD_ENTRY * thread_p, FILE * outfp)
       fprintf (outfp, msgcat_message (MSGCAT_CATALOG_CUBRID, MSGCAT_SET_LOCK, MSGCAT_LK_NEWLINE));
     }
 
-
   /* compute number of lock res entries */
   num_locked =
-    lk_Gl.obj_hash_table.freelist->alloc_cnt + lk_Gl.class_obj_hash_table.freelist->alloc_cnt - lk_Gl.obj_hash_table.freelist->retired_cnt -
+    lk_Gl.obj_hash_table.freelist->alloc_cnt - lk_Gl.obj_hash_table.freelist->retired_cnt -
     lk_Gl.obj_hash_table.freelist->available_cnt;
   num_locked = MAX (num_locked, 0);
 
@@ -8863,15 +8807,6 @@ xlock_dump (THREAD_ENTRY * thread_p, FILE * outfp)
   fprintf (outfp, "\tCurrent number of objects which are locked    = %d\n", num_locked);
   fprintf (outfp, "\tMaximum number of objects which can be locked = %d\n\n", lk_Gl.obj_hash_table.freelist->alloc_cnt);
 
-  /* Class locks first */
-  lf_hash_create_iterator(&iterator, t_entry, &lk_Gl.class_obj_hash_table);
-  res_ptr = (LK_RES *)lf_hash_iterate(&iterator);
-  for (; res_ptr != NULL; res_ptr = (LK_RES *)lf_hash_iterate(&iterator))
-  {
-    lock_dump_resource(thread_p, outfp, res_ptr);
-  }
-
-  /* Instance locks */
   lf_hash_create_iterator (&iterator, t_entry, &lk_Gl.obj_hash_table);
   res_ptr = (LK_RES *) lf_hash_iterate (&iterator);
   for (; res_ptr != NULL; res_ptr = (LK_RES *) lf_hash_iterate (&iterator))
