@@ -39,6 +39,7 @@
 #include "environment_variable.h"
 #include "event_log.h"
 #include "locator.h"
+#include "lockfree_circular_queue.hpp"
 #include "lock_free.h"
 #include "lock_manager.h"
 #include "log_impl.h"
@@ -64,6 +65,7 @@
 #include "tsc_timer.h"
 #include "wait_for_graph.h"
 #include "xserver_interface.h"
+#include "perf_monitor.h"
 
 #include <array>
 
@@ -369,11 +371,13 @@ struct lk_global_data
   bool verbose_mode;
   // *INDENT-OFF*
   std::atomic_int deadlock_and_timeout_detector;
+  lockfree::circular_queue<LK_ENTRY *> *lk_resume_entries;	/* lock frree entries */
   // *INDENT-ON*
 #if defined(LK_DUMP)
   bool dump_level;
 #endif				/* LK_DUMP */
 };
+#define LOCK_FREE_ENTRIES_BUFFER_SIZE (4096)
 
 LK_GLOBAL_DATA lk_Gl = {
   0, LF_HASH_TABLE_INITIALIZER, LF_HASH_TABLE_INITIALIZER,
@@ -544,12 +548,16 @@ static void lock_get_transaction_lock_waiting_threads_mapfunc (THREAD_ENTRY & th
 							       size_t & count);
 static void lock_get_transaction_lock_waiting_threads (int tran_index, tran_lock_waiters_array_type & tran_lock_waiters,
 						       size_t & count);
+static void lock_resume_threads ();
 
 // *INDENT-OFF*
 static cubthread::daemon *lock_Deadlock_detect_daemon = NULL;
+static cubthread::daemon *lock_resume_threads_daemon = NULL;
 
 static void lock_deadlock_detect_daemon_init ();
 static void lock_deadlock_detect_daemon_destroy ();
+static void lock_resume_threads_daemon_init();
+static void lock_resume_threads_daemon_destroy();
 // *INDENT-ON*
 
 /* object lock entry */
@@ -2144,7 +2152,6 @@ lock_set_error_for_aborted (LK_ENTRY * entry_ptr)
   char *client_user_name;	/* Client user name for transaction */
   char *client_host_name;	/* Client host for transaction */
   int client_pid;		/* Client process id for transaction */
-  LOG_TDES *tdes;
 
   (void) logtb_find_client_name_host_pid (entry_ptr->tran_index, &client_prog_name, &client_user_name,
 					  &client_host_name, &client_pid);
@@ -2602,7 +2609,19 @@ lock_grant_blocked_holder (THREAD_ENTRY * thread_p, LK_RES * res_ptr)
 	  LK_MSG_LOCK_ACQUIRED (entry_ptr);
 #endif /* LK_TRACE_OBJECT */
 	  /* wake up the blocked holder */
-	  lock_resume (holder, LOCK_RESUMED);
+
+	  /* TO DO - add lock entry to querue, since resuming may slow down the current thread. n */
+	  assert (lk_Gl.lk_resume_entries != NULL);
+	  if (res_ptr->key.type == LOCK_RESOURCE_INSTANCE && lock_resume_threads_daemon != NULL
+	      && lk_Gl.lk_resume_entries->size () < 20 && lk_Gl.lk_resume_entries->produce (holder))
+	    {
+	      thread_unlock_entry (holder->thrd_entry);
+	      lock_resume_threads_daemon->wakeup ();
+	    }
+	  else
+	    {
+	      lock_resume (holder, LOCK_RESUMED);
+	    }
 	}
       else
 	{
@@ -2715,7 +2734,16 @@ lock_grant_blocked_waiter (THREAD_ENTRY * thread_p, LK_RES * res_ptr)
 #endif /* LK_TRACE_OBJECT */
 
 	  /* wake up the blocked waiter */
-	  lock_resume (waiter, LOCK_RESUMED);
+	  if (res_ptr->key.type == LOCK_RESOURCE_INSTANCE && lock_resume_threads_daemon != NULL
+	      && lk_Gl.lk_resume_entries->size () < 20 && lk_Gl.lk_resume_entries->produce (waiter))
+	    {
+	      thread_unlock_entry (waiter->thrd_entry);
+	      lock_resume_threads_daemon->wakeup ();
+	    }
+	  else
+	    {
+	      lock_resume (waiter, LOCK_RESUMED);
+	    }
 	}
       else
 	{
@@ -2867,7 +2895,17 @@ lock_grant_blocked_waiter_partial (THREAD_ENTRY * thread_p, LK_RES * res_ptr, LK
 #endif /* LK_TRACE_OBJECT */
 
 	  /* wake up the blocked waiter (correctness must be checked) */
-	  lock_resume (check, LOCK_RESUMED);
+	  assert (lk_Gl.lk_resume_entries != NULL);
+	  if (res_ptr->key.type == LOCK_RESOURCE_INSTANCE && lock_resume_threads_daemon != NULL
+	      && lk_Gl.lk_resume_entries->size () < 20 && lk_Gl.lk_resume_entries->produce (check))
+	    {
+	      thread_unlock_entry (check->thrd_entry);
+	      lock_resume_threads_daemon->wakeup ();
+	    }
+	  else
+	    {
+	      lock_resume (check, LOCK_RESUMED);
+	    }
 	}
       else
 	{
@@ -5957,6 +5995,15 @@ lock_initialize (void)
       goto error;
     }
 
+  /* *INDENT-OFF* */
+  lk_Gl.lk_resume_entries = new lockfree::circular_queue<LK_ENTRY *>(LOCK_FREE_ENTRIES_BUFFER_SIZE);
+  /* *INDENT-ON* */
+  if (lk_Gl.lk_resume_entries == NULL)
+    {
+      ASSERT_ERROR ();
+      goto error;
+    }
+
   /* initialize some parameters */
 #if defined(CUBRID_DEBUG)
   lk_Gl.verbose_mode = true;
@@ -5988,6 +6035,7 @@ lock_initialize (void)
 #endif /* LK_DUMP */
 
   lock_deadlock_detect_daemon_init ();
+  lock_resume_threads_daemon_init ();
 
   return error_code;
 
@@ -6092,6 +6140,7 @@ lock_deadlock_detect_daemon_init ()
 }
 #endif /* SERVER_MODE */
 
+
 #if defined(SERVER_MODE)
 /*
  * lock_deadlock_detect_daemon_destroy () - destroy deadlock detect daemon thread
@@ -6116,6 +6165,68 @@ lock_deadlock_detect_daemon_get_stats (UINT64 * statsp)
     }
 }
 #endif /* SERVER_MODE */
+
+
+#if defined(SERVER_MODE)
+// class lock_resume_task
+//
+//  description:
+//    lock resume daemon task
+//
+class lock_resume_task : public cubthread::entry_task
+{
+private:
+  PERF_UTIME_TRACKER m_perf_track;
+
+public:
+  lock_resume_task()
+  {
+    PERF_UTIME_TRACKER_START(NULL, &m_perf_track);
+  }
+
+public:
+  void execute(cubthread::entry & thread_ref) override
+  {
+    if (!BO_IS_SERVER_RESTARTED())
+    {
+      // wait for boot to finish
+      return;
+    }
+
+    /* performance tracking */
+    PERF_UTIME_TRACKER_TIME (NULL, &m_perf_track, PSTAT_LOCK_RESUME_COND_WAIT);
+    lock_resume_threads ();
+    PERF_UTIME_TRACKER_START (&thread_ref, &m_perf_track);
+  }
+};
+#endif /* SERVER_MODE */
+
+#if defined (SERVER_MODE)
+/*
+* lock_resume_threads_daemon_init () - initialize lock resume daemon thread
+*/
+static void
+lock_resume_threads_daemon_init()
+{
+
+  cubthread::looper looper = cubthread::looper(std::chrono::milliseconds(10));
+  lock_resume_task *daemon_task = new lock_resume_task();
+
+  lock_resume_threads_daemon = cubthread::get_manager()->create_daemon(looper, daemon_task);
+}
+#endif /* SERVER_MODE */
+
+#if defined(SERVER_MODE)
+/*
+* lock_resume_threads_daemon_destroy () - destroy lock resume daemon thread
+*/
+void
+lock_resume_threads_daemon_destroy()
+{
+  cubthread::get_manager()->destroy_daemon(lock_resume_threads_daemon);
+}
+#endif /* SERVER_MODE */
+
 // *INDENT-ON*
 
 /*
@@ -6175,7 +6286,14 @@ lock_finalize (void)
   lf_freelist_destroy (&lk_Gl.obj_free_entry_list);
   lf_freelist_destroy (&lk_Gl.obj_free_res_list);
 
+  if (lk_Gl.lk_resume_entries != NULL)
+    {
+      delete lk_Gl.lk_resume_entries;
+      lk_Gl.lk_resume_entries = NULL;
+    }
+
   lock_deadlock_detect_daemon_destroy ();
+  lock_resume_threads_daemon_destroy ();
 #endif /* !SERVER_MODE */
 }
 
@@ -7192,6 +7310,7 @@ lock_unlock_all (THREAD_ENTRY * thread_p, bool aborted)
     }
   else
     {
+      /* TO DO - mark class lock entry as deleted */
       remove_class_lock = false;
       entry_ptr = tran_lock->class_hold_list;
       while (entry_ptr != NULL)
@@ -10263,3 +10382,31 @@ lock_get_transaction_lock_waiting_threads (int tran_index, tran_lock_waiters_arr
   thread_get_manager ()->map_entries (lock_get_transaction_lock_waiting_threads_mapfunc, tran_index,
 				      tran_lock_waiters, count);
 }
+
+#if defined(SERVER_MODE)
+/*
+* lock_resume_threads () - resumes blocked threads
+*
+* return        : void
+* thread_p (in) : thread entry
+*/
+static void
+lock_resume_threads ()
+{
+  LK_ENTRY *lk_entry;
+
+  while (lk_Gl.lk_resume_entries->consume (lk_entry))
+    {
+      thread_lock_entry (lk_entry->thrd_entry);
+
+      /* check if the thread is still waiting for a lock */
+      if (!LK_IS_LOCKWAIT_THREAD (lk_entry->thrd_entry))
+	{
+	  thread_unlock_entry (lk_entry->thrd_entry);
+	  continue;
+	}
+
+      lock_resume (lk_entry, LOCK_RESUMED);
+    }
+}
+#endif
