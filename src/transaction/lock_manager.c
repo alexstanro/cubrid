@@ -334,7 +334,7 @@ struct lk_tran_lock
   bool is_instant_duration;
 };
 /* Max size of transaction local pool of lock entries. */
-#define LOCK_TRAN_LOCAL_POOL_MAX_SIZE 10
+#define LOCK_TRAN_LOCAL_POOL_MAX_SIZE 20
 
 /*
  * Lock Manager Global Data Structure
@@ -3244,6 +3244,7 @@ lock_internal_perform_lock_object (THREAD_ENTRY * thread_p, int tran_index, cons
   LK_RES *res_ptr;
   LK_ENTRY *entry_ptr = NULL;
   LK_ENTRY *wait_entry_ptr = NULL;
+  LK_ENTRY *new_entry_ptr = NULL;
   LK_ENTRY *prev, *curr, *i;
   bool lock_conversion = false;
   THREAD_ENTRY *thrd_entry;
@@ -3255,6 +3256,7 @@ lock_internal_perform_lock_object (THREAD_ENTRY * thread_p, int tran_index, cons
   TSC_TICKS start_tick, end_tick;
   TSCTIMEVAL tv_diff;
   UINT64 lock_wait_time;
+  LF_HASH_TABLE *lf_hash;
 
 #if defined(ENABLE_SYSTEMTAP)
   const OID *class_oid_for_marker_p;
@@ -3357,7 +3359,31 @@ start:
 
   /* find or add the lockable object in the lock table */
   search_key = lock_create_search_key ((OID *) oid, (OID *) class_oid);
-  rv = lf_hash_find_or_insert (t_entry_res, &lk_Gl.obj_hash_table, (void *) &search_key, (void **) &res_ptr, NULL);
+
+  lf_hash = &lk_Gl.obj_hash_table;
+
+  /* Prepare entry as being granted - most common case. */
+  new_entry_ptr = lock_get_new_entry (tran_index, t_entry_ent, &lk_Gl.obj_free_entry_list);
+  if (new_entry_ptr == NULL)
+    {
+      assert (is_res_mutex_locked);
+      pthread_mutex_unlock (&res_ptr->res_mutex);
+      er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_LK_ALLOC_RESOURCE, 1, "lock heap entry");
+      ret_val = LK_NOTGRANTED_DUE_ERROR;
+      goto end;
+    }
+
+  /* initialize the lock entry as granted state */
+  lock_initialize_entry_as_granted (new_entry_ptr, tran_index, NULL, lock);
+  if (is_instant_duration)
+    {
+      new_entry_ptr->instant_lock_count++;
+      assert (new_entry_ptr->instant_lock_count > 0);
+    }
+
+  new_entry_ptr->class_entry = class_entry;
+
+  rv = lf_hash_find_or_insert (t_entry_res, lf_hash, (void *) &search_key, (void **) &res_ptr, NULL);
   if (rv != NO_ERROR)
     {
       return rv;
@@ -3377,47 +3403,28 @@ start:
       /* initialize the lock resource entry */
       lock_initialize_resource_as_allocated (res_ptr, NULL_LOCK);
 
-      entry_ptr = lock_get_new_entry (tran_index, t_entry_ent, &lk_Gl.obj_free_entry_list);
-      if (entry_ptr == NULL)
-	{
-	  assert (is_res_mutex_locked);
-	  pthread_mutex_unlock (&res_ptr->res_mutex);
-	  er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_LK_ALLOC_RESOURCE, 1, "lock heap entry");
-	  ret_val = LK_NOTGRANTED_DUE_ERROR;
-	  goto end;
-	}
-
-      /* initialize the lock entry as granted state */
-      lock_initialize_entry_as_granted (entry_ptr, tran_index, res_ptr, lock);
-      if (is_instant_duration)
-	{
-	  entry_ptr->instant_lock_count++;
-	  assert (entry_ptr->instant_lock_count > 0);
-	}
-
       /* add the lock entry into the holder list */
-      res_ptr->holder = entry_ptr;
-
-      /* to manage granules */
-      entry_ptr->class_entry = class_entry;
-      lock_increment_class_granules (class_entry);
-
-      /* add the lock entry into the transaction hold list */
-      lock_insert_into_tran_hold_list (entry_ptr, tran_index);
-
+      new_entry_ptr->res_head = res_ptr;
+      res_ptr->holder = new_entry_ptr;
       res_ptr->total_holders_mode = lock;
 
       /* Record number of acquired locks */
       perfmon_inc_stat (thread_p, PSTAT_LK_NUM_ACQUIRED_ON_OBJECTS);
 #if defined(LK_TRACE_OBJECT)
-      LK_MSG_LOCK_ACQUIRED (entry_ptr);
+      LK_MSG_LOCK_ACQUIRED (new_entry_ptr);
 #endif /* LK_TRACE_OBJECT */
 
       /* release all mutexes */
       assert (is_res_mutex_locked);
       pthread_mutex_unlock (&res_ptr->res_mutex);
 
-      *entry_addr_ptr = entry_ptr;
+      /* to manage granules */
+      lock_increment_class_granules (class_entry);
+
+      /* add the lock entry into the transaction hold list */
+      lock_insert_into_tran_hold_list (new_entry_ptr, tran_index);
+
+      *entry_addr_ptr = new_entry_ptr;
 
       ret_val = LK_GRANTED;
       goto end;
@@ -3449,50 +3456,32 @@ start:
 
       if (compat1 == LOCK_COMPAT_YES && compat2 == LOCK_COMPAT_YES)
 	{
-	  entry_ptr = lock_get_new_entry (tran_index, t_entry_ent, &lk_Gl.obj_free_entry_list);
-	  if (entry_ptr == NULL)
-	    {
-	      pthread_mutex_unlock (&res_ptr->res_mutex);
-	      er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_LK_ALLOC_RESOURCE, 1, "lock heap entry");
-
-	      ret_val = LK_NOTGRANTED_DUE_ERROR;
-	      goto end;
-	    }
-
-	  /* initialize the lock entry as granted state */
-	  lock_initialize_entry_as_granted (entry_ptr, tran_index, res_ptr, lock);
-	  if (is_instant_duration)
-	    {
-	      entry_ptr->instant_lock_count++;
-	      assert (entry_ptr->instant_lock_count > 0);
-	    }
-
-	  /* to manage granules */
-	  entry_ptr->class_entry = class_entry;
-	  lock_increment_class_granules (class_entry);
-
 	  /* add the lock entry into the holder list */
-	  lock_position_holder_entry (res_ptr, entry_ptr);
+	  new_entry_ptr->res_head = res_ptr;
+	  lock_position_holder_entry (res_ptr, new_entry_ptr);
 
 	  /* change total_holders_mode (total mode of holder list) */
 	  assert (lock >= NULL_LOCK && res_ptr->total_holders_mode >= NULL_LOCK);
 	  res_ptr->total_holders_mode = lock_Conv[lock][res_ptr->total_holders_mode];
 	  assert (res_ptr->total_holders_mode != NA_LOCK);
 
-	  /* add the lock entry into the transaction hold list */
-	  lock_insert_into_tran_hold_list (entry_ptr, tran_index);
-
 	  lock_update_non2pl_list (thread_p, res_ptr, tran_index, lock);
 
 	  /* Record number of acquired locks */
 	  perfmon_inc_stat (thread_p, PSTAT_LK_NUM_ACQUIRED_ON_OBJECTS);
 #if defined(LK_TRACE_OBJECT)
-	  LK_MSG_LOCK_ACQUIRED (entry_ptr);
+	  LK_MSG_LOCK_ACQUIRED (new_entry_ptr);
 #endif /* LK_TRACE_OBJECT */
 
 	  assert (is_res_mutex_locked);
 	  pthread_mutex_unlock (&res_ptr->res_mutex);
-	  *entry_addr_ptr = entry_ptr;
+
+	  lock_increment_class_granules (class_entry);
+
+	  /* add the lock entry into the transaction hold list */
+	  lock_insert_into_tran_hold_list (new_entry_ptr, tran_index);
+
+	  *entry_addr_ptr = new_entry_ptr;
 
 	  ret_val = LK_GRANTED;
 	  goto end;
@@ -3505,26 +3494,12 @@ start:
 	  pthread_mutex_unlock (&res_ptr->res_mutex);
 	  if (wait_msecs == LK_ZERO_WAIT)
 	    {
-	      if (entry_ptr == NULL)
-		{
-		  entry_ptr = lock_get_new_entry (tran_index, t_entry_ent, &lk_Gl.obj_free_entry_list);
-		  if (entry_ptr == NULL)
-		    {
-		      er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_LK_ALLOC_RESOURCE, 1, "lock heap entry");
-		      ret_val = LK_NOTGRANTED_DUE_ERROR;
-		      goto end;
-		    }
-		  lock_initialize_entry_as_blocked (entry_ptr, thread_p, tran_index, res_ptr, lock);
-		  if (is_instant_duration
-		      /* && lock_Comp[lock][NULL_LOCK] == true */ )
-		    {
-		      entry_ptr->instant_lock_count++;
-		      assert (entry_ptr->instant_lock_count > 0);
-		    }
-		}
-	      (void) lock_set_error_for_timeout (thread_p, entry_ptr);
+	      lock_initialize_entry_as_blocked (new_entry_ptr, thread_p, tran_index, res_ptr, lock);
 
-	      lock_free_entry (tran_index, t_entry_ent, &lk_Gl.obj_free_entry_list, entry_ptr);
+	      (void) lock_set_error_for_timeout (thread_p, new_entry_ptr);
+
+	      lock_free_entry (tran_index, t_entry_ent, &lk_Gl.obj_free_entry_list, new_entry_ptr);
+	      new_entry_ptr = NULL;
 	    }
 
 	  ret_val = LK_NOTGRANTED_DUE_TIMEOUT;
@@ -3598,23 +3573,8 @@ start:
 	  goto start;
 	}
 
-      /* allocate a lock entry. */
-      entry_ptr = lock_get_new_entry (tran_index, t_entry_ent, &lk_Gl.obj_free_entry_list);
-      if (entry_ptr == NULL)
-	{
-	  assert (is_res_mutex_locked);
-	  pthread_mutex_unlock (&res_ptr->res_mutex);
-	  er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_LK_ALLOC_RESOURCE, 1, "lock heap entry");
-	  ret_val = LK_NOTGRANTED_DUE_ERROR;
-	  goto end;
-	}
       /* initialize the lock entry as blocked state */
-      lock_initialize_entry_as_blocked (entry_ptr, thread_p, tran_index, res_ptr, lock);
-      if (is_instant_duration)
-	{
-	  entry_ptr->instant_lock_count++;
-	  assert (entry_ptr->instant_lock_count > 0);
-	}
+      lock_initialize_entry_as_blocked (new_entry_ptr, thread_p, tran_index, res_ptr, lock);
 
       /* append the lock request at the end of the waiter */
       prev = NULL;
@@ -3624,11 +3584,11 @@ start:
 	}
       if (prev == NULL)
 	{
-	  res_ptr->waiter = entry_ptr;
+	  res_ptr->waiter = new_entry_ptr;
 	}
       else
 	{
-	  prev->next = entry_ptr;
+	  prev->next = new_entry_ptr;
 	}
 
       /* change total_waiters_mode (total mode of waiting waiter) */
@@ -3636,11 +3596,13 @@ start:
       res_ptr->total_waiters_mode = lock_Conv[lock][res_ptr->total_waiters_mode];
       assert (res_ptr->total_waiters_mode != NA_LOCK);
 
+      entry_ptr = new_entry_ptr;
       goto blocked;
     }				/* end of a new lock request */
 
 lock_tran_lk_entry:
   /* The object exists in the hash chain & I am a lock holder of the lockable object. */
+  assert (entry_ptr != NULL);
   lock_conversion = true;
   old_mode = entry_ptr->granted_mode;
   assert (lock >= NULL_LOCK && entry_ptr->granted_mode >= NULL_LOCK);
@@ -3731,15 +3693,10 @@ lock_tran_lk_entry:
       pthread_mutex_unlock (&res_ptr->res_mutex);
       if (wait_msecs == LK_ZERO_WAIT)
 	{
-	  LK_ENTRY *p = lock_get_new_entry (tran_index, t_entry_ent,
-					    &lk_Gl.obj_free_entry_list);
-
-	  if (p != NULL)
-	    {
-	      lock_initialize_entry_as_blocked (p, thread_p, tran_index, res_ptr, lock);
-	      lock_set_error_for_timeout (thread_p, p);
-	      lock_free_entry (tran_index, t_entry_ent, &lk_Gl.obj_free_entry_list, p);
-	    }
+	  lock_initialize_entry_as_blocked (new_entry_ptr, thread_p, tran_index, res_ptr, lock);
+	  lock_set_error_for_timeout (thread_p, new_entry_ptr);
+	  lock_free_entry (tran_index, t_entry_ent, &lk_Gl.obj_free_entry_list, new_entry_ptr);
+	  new_entry_ptr = NULL;
 	}
 
       ret_val = LK_NOTGRANTED_DUE_TIMEOUT;
@@ -3869,6 +3826,10 @@ blocked:
       /* Following three cases are possible. 1. lock timeout 2. deadlock victim 3. interrupt In any case, current
        * thread must remove the wait info. */
       lock_internal_perform_unlock_object (thread_p, entry_ptr, false, false);
+      if (entry_ptr == new_entry_ptr)
+	{
+	  new_entry_ptr = NULL;
+	}
 
       if (ret_val == LOCK_RESUMED_ABORTED)
 	{
@@ -3942,6 +3903,11 @@ end:
 #if defined(ENABLE_SYSTEMTAP)
   CUBRID_LOCK_ACQUIRE_END (oid_for_marker_p, class_oid_for_marker_p, lock, ret_val != LK_GRANTED);
 #endif /* ENABLE_SYSTEMTAP */
+
+  if (new_entry_ptr != NULL && *entry_addr_ptr != new_entry_ptr)
+    {
+      lock_free_entry (tran_index, t_entry_ent, &lk_Gl.obj_free_entry_list, new_entry_ptr);
+    }
 
   return ret_val;
 }
