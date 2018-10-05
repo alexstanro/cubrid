@@ -531,9 +531,6 @@ PSTAT_METADATA pstat_Metadata[] = {
 				     "Time_DWB_wait_flush_block_helper_time"),
   PSTAT_METADATA_INIT_COUNTER_TIMER (PSTAT_DWB_FLUSH_FORCE_TIME_COUNTERS, "Time_DWB_flush_force_time"),
 
-  /* Unlocking */
-  PSTAT_METADATA_INIT_COUNTER_TIMER (PSTAT_LOCK_RESUME_COND_WAIT, "Time_Lock_resume_cond_wait"),
-
   /* peeked stats */
   PSTAT_METADATA_INIT_SINGLE_PEEK (PSTAT_PB_WAIT_THREADS_HIGH_PRIO, "Num_alloc_bcb_wait_threads_high_priority"),
   PSTAT_METADATA_INIT_SINGLE_PEEK (PSTAT_PB_WAIT_THREADS_LOW_PRIO, "Num_alloc_bcb_wait_threads_low_priority"),

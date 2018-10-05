@@ -208,7 +208,7 @@ extern void lock_unlock_object_donot_move_to_non2pl (THREAD_ENTRY * thread_p, co
 extern void lock_unlock_object (THREAD_ENTRY * thread_p, const OID * oid, const OID * class_oid, LOCK lock, bool force);
 extern void lock_unlock_objects_lock_set (THREAD_ENTRY * thread_p, LC_LOCKSET * lockset);
 extern void lock_unlock_classes_lock_hint (THREAD_ENTRY * thread_p, LC_LOCKHINT * lockhint);
-extern void lock_unlock_all (THREAD_ENTRY * thread_p, bool aborted);
+extern void lock_unlock_all (THREAD_ENTRY * thread_p);
 extern LOCK lock_get_object_lock (const OID * oid, const OID * class_oid, int tran_index);
 extern bool lock_has_xlock (THREAD_ENTRY * thread_p);
 #if defined (ENABLE_UNUSED_FUNCTION)
