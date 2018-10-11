@@ -1192,6 +1192,29 @@ exit_on_error:
   goto end;
 }
 
+#if defined(SERVER_MODE)
+void
+xqmgr_clear_query_ctx (THREAD_ENTRY * thread_p, XQMGR_EXECUTE_QUERY_CTX * query_exec_ctx)
+{
+  assert (query_exec_ctx != NULL);
+
+  if (query_exec_ctx->xclone)
+    {
+      if (query_exec_ctx->xclone->xasl->status != XASL_CLEARED)
+	{
+	  (void) qexec_clear_xasl (thread_p, query_exec_ctx->xclone->xasl, true);
+	}
+
+      assert (query_exec_ctx->xcache_entry != NULL);
+      xcache_retire_clone (thread_p, query_exec_ctx->xcache_entry, query_exec_ctx->xclone);
+      xcache_unfix (thread_p, query_exec_ctx->xcache_entry);
+
+      query_exec_ctx->xclone = NULL;
+      query_exec_ctx->xcache_entry = NULL;
+    }
+}
+#endif
+
 /*
  * xqmgr_execute_query () - Execute a prepared query
  *   return: query result file id
@@ -1216,10 +1239,11 @@ exit_on_error:
 QFILE_LIST_ID *
 xqmgr_execute_query (THREAD_ENTRY * thread_p, const XASL_ID * xasl_id_p, QUERY_ID * query_id_p, int dbval_count,
 		     void *dbval_p, QUERY_FLAG * flag_p, CACHE_TIME * client_cache_time_p,
-		     CACHE_TIME * server_cache_time_p, int query_timeout, XASL_CACHE_ENTRY ** ret_cache_entry_p)
+		     CACHE_TIME * server_cache_time_p, int query_timeout,
+		     XQMGR_EXECUTE_QUERY_CTX * qmgr_execute_query_ctx)
 {
   XASL_CACHE_ENTRY *xasl_cache_entry_p = NULL;
-  XASL_CLONE xclone = XASL_CLONE_INITIALIZER;
+  XASL_CLONE local_xclone = XASL_CLONE_INITIALIZER, *ptr_xclone;
   QFILE_LIST_CACHE_ENTRY *list_cache_entry_p;
   DB_VALUE *dbvals_p;
 #if defined (SERVER_MODE)
@@ -1287,8 +1311,17 @@ xqmgr_execute_query (THREAD_ENTRY * thread_p, const XASL_ID * xasl_id_p, QUERY_I
 	}
     }
 
+  if (qmgr_execute_query_ctx != NULL)
+    {
+      ptr_xclone = qmgr_execute_query_ctx->xclone;
+    }
+  else
+    {
+      ptr_xclone = &local_xclone;
+    }
+
   xasl_cache_entry_p = NULL;
-  if (xcache_find_xasl_id (thread_p, xasl_id_p, &xasl_cache_entry_p, &xclone) != NO_ERROR)
+  if (xcache_find_xasl_id (thread_p, xasl_id_p, &xasl_cache_entry_p, ptr_xclone) != NO_ERROR)
     {
       ASSERT_ERROR ();
       return NULL;
@@ -1300,7 +1333,7 @@ xqmgr_execute_query (THREAD_ENTRY * thread_p, const XASL_ID * xasl_id_p, QUERY_I
       perfmon_inc_stat (thread_p, PSTAT_PC_NUM_INVALID_XASL_ID);
       return NULL;
     }
-  if (xclone.xasl == NULL || xclone.xasl_buf == NULL)
+  if (ptr_xclone->xasl == NULL || ptr_xclone->xasl_buf == NULL)
     {
       assert (false);
       er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_QPROC_INVALID_XASLNODE, 0);
@@ -1308,9 +1341,9 @@ xqmgr_execute_query (THREAD_ENTRY * thread_p, const XASL_ID * xasl_id_p, QUERY_I
       return NULL;
     }
 
-  if (ret_cache_entry_p)
+  if (qmgr_execute_query_ctx)
     {
-      *ret_cache_entry_p = xasl_cache_entry_p;
+      qmgr_execute_query_ctx->xcache_entry = xasl_cache_entry_p;
     }
 
   if (IS_TRIGGER_INVOLVED (*flag_p))
@@ -1462,7 +1495,7 @@ xqmgr_execute_query (THREAD_ENTRY * thread_p, const XASL_ID * xasl_id_p, QUERY_I
   assert (cached_result == false);
 
   list_id_p =
-    qmgr_process_query (thread_p, xclone.xasl, NULL, 0, dbval_count, dbvals_p, *flag_p, query_p, tran_entry_p);
+    qmgr_process_query (thread_p, ptr_xclone->xasl, NULL, 0, dbval_count, dbvals_p, *flag_p, query_p, tran_entry_p);
   if (list_id_p == NULL)
     {
       goto exit_on_error;
@@ -1539,15 +1572,24 @@ xqmgr_execute_query (THREAD_ENTRY * thread_p, const XASL_ID * xasl_id_p, QUERY_I
 
 end:
 
-  xcache_retire_clone (thread_p, xasl_cache_entry_p, &xclone);
-  if (ret_cache_entry_p != NULL && *ret_cache_entry_p != NULL)
+  if (qmgr_execute_query_ctx == NULL)
+    {
+      if (ptr_xclone->xasl->status != XASL_CLEARED)
+	{
+	  /* Can't be postponed and not cleared yet. */
+	  (void) qexec_clear_xasl (thread_p, ptr_xclone->xasl, true);
+	}
+      xcache_retire_clone (thread_p, xasl_cache_entry_p, ptr_xclone);
+      if (xasl_cache_entry_p != NULL)
+	{
+	  xcache_unfix (thread_p, xasl_cache_entry_p);
+	}
+    }
+  else if (qmgr_execute_query_ctx->xcache_entry != NULL)
     {
       /* The XASL cache entry is output. */
-      assert (*ret_cache_entry_p == xasl_cache_entry_p);
-    }
-  else if (xasl_cache_entry_p != NULL)
-    {
-      xcache_unfix (thread_p, xasl_cache_entry_p);
+      assert (qmgr_execute_query_ctx->xcache_entry == xasl_cache_entry_p);
+      assert (qmgr_execute_query_ctx->xclone == ptr_xclone);
     }
 
   if (IS_TRIGGER_INVOLVED (*flag_p))

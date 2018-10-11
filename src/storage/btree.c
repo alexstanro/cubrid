@@ -7772,7 +7772,7 @@ btree_get_pkey_btid (THREAD_ENTRY * thread_p, OID * cls_oid, BTID * pkey_btid)
 
   if (cls_repr != NULL)
     {
-      heap_classrepr_free_and_init (cls_repr, &cache_idx);
+      heap_classrepr_free_and_init (thread_p, cls_repr, &cache_idx);
     }
 
   return error;
@@ -7835,7 +7835,7 @@ btree_check_by_class_oid (THREAD_ENTRY * thread_p, OID * cls_oid, BTID * idx_bti
 
   if (cls_repr)
     {
-      heap_classrepr_free_and_init (cls_repr, &cache_idx);
+      heap_classrepr_free_and_init (thread_p, cls_repr, &cache_idx);
     }
 
   return rv;
@@ -8089,7 +8089,7 @@ btree_repair_prev_link_by_class_oid (THREAD_ENTRY * thread_p, OID * oid, BTID * 
   lock_unlock_object (thread_p, oid, oid_Root_class_oid, IS_LOCK, true);
   if (cls_repr)
     {
-      heap_classrepr_free_and_init (cls_repr, &cache_idx);
+      heap_classrepr_free_and_init (thread_p, cls_repr, &cache_idx);
     }
 
   return valid;
@@ -20516,7 +20516,7 @@ cleanup:
 
   if (classrep != NULL)
     {
-      heap_classrepr_free_and_init (classrep, &idx_in_cache);
+      heap_classrepr_free_and_init (thread_p, classrep, &idx_in_cache);
     }
 
   if (parts != NULL)
@@ -20634,7 +20634,7 @@ cleanup:
 
   if (classrep != NULL)
     {
-      heap_classrepr_free_and_init (classrep, &idx_in_cache);
+      heap_classrepr_free_and_init (thread_p, classrep, &idx_in_cache);
     }
 
   if (class_name != NULL)
@@ -21986,7 +21986,7 @@ btree_check_foreign_key (THREAD_ENTRY * thread_p, OID * cls_oid, HFID * hfid, OI
     }
   if (classrepr != NULL)
     {
-      heap_classrepr_free_and_init (classrepr, &classrepr_cacheindex);
+      heap_classrepr_free_and_init (thread_p, classrepr, &classrepr_cacheindex);
     }
 
   return ret;
@@ -21999,7 +21999,7 @@ exit_on_error:
     }
   if (classrepr != NULL)
     {
-      heap_classrepr_free_and_init (classrepr, &classrepr_cacheindex);
+      heap_classrepr_free_and_init (thread_p, classrepr, &classrepr_cacheindex);
     }
 
   return (ret == NO_ERROR && (ret = er_errid ()) == NO_ERROR) ? ER_FAILED : ret;

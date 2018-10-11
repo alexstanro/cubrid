@@ -49,6 +49,21 @@
 #include "storage_common.h"
 #include "thread_compat.hpp"
 
+typedef struct xqmgr_execute_query_ctx XQMGR_EXECUTE_QUERY_CTX;
+struct xqmgr_execute_query_ctx
+{
+  XASL_CACHE_ENTRY *xcache_entry;	/* xasl cache entry */
+  XASL_CLONE *xclone;		/* xasl clone */
+};
+
+#define XQMGR_INIT_QUERY_CTX(ctx, cache_entry, clone) \
+  do \
+    { \
+      (ctx)->xcache_entry = cache_entry; \
+      (ctx)->xclone = clone; \
+    } \
+  while (0)
+
 extern int xboot_initialize_server (const BOOT_CLIENT_CREDENTIAL * client_credential, BOOT_DB_PATH_INFO * db_path_info,
 				    bool db_overwrite, const char *file_addmore_vols, volatile DKNPAGES db_npages,
 				    PGLENGTH db_desired_pagesize, volatile DKNPAGES xlog_npages,
@@ -203,10 +218,14 @@ extern int xqfile_get_list_file_page (THREAD_ENTRY * thread_p, QUERY_ID query_id
 /* new query interface */
 extern int xqmgr_prepare_query (THREAD_ENTRY * thrd, COMPILE_CONTEXT * ctx, XASL_STREAM * stream);
 
+#if defined (SERVER_MODE)
+extern void xqmgr_clear_query_ctx (THREAD_ENTRY * thread_p, XQMGR_EXECUTE_QUERY_CTX * query_exec_ctx);
+#endif
+
 extern QFILE_LIST_ID *xqmgr_execute_query (THREAD_ENTRY * thrd, const XASL_ID * xasl_id, QUERY_ID * query_idp,
 					   int dbval_cnt, void *data, QUERY_FLAG * flagp, CACHE_TIME * clt_cache_time,
 					   CACHE_TIME * srv_cache_time, int query_timeout,
-					   XASL_CACHE_ENTRY ** ret_cache_entry_p);
+					   XQMGR_EXECUTE_QUERY_CTX * qmgr_execute_query_ctx);
 extern QFILE_LIST_ID *xqmgr_prepare_and_execute_query (THREAD_ENTRY * thrd, char *xasl_stream, int xasl_stream_size,
 						       QUERY_ID * query_id, int dbval_cnt, void *data,
 						       QUERY_FLAG * flag, int query_timeout);

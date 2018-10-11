@@ -14687,8 +14687,11 @@ qexec_execute_query (THREAD_ENTRY * thread_p, XASL_NODE * xasl, int dbval_cnt, c
     }
 #endif
 
+  /* Postpones XASL clear, in server mode. */
+#if !defined (SERVER_MODE)
   /* clear XASL tree */
   (void) qexec_clear_xasl (thread_p, xasl, true);
+#endif
 
 #if defined(CUBRID_DEBUG)
   if (trace && fp)
@@ -14718,6 +14721,7 @@ end:
     {
       er_print_callstack (ARG_FILE_LINE, "ending query execution with qlist_count = %d\n", thread_p->m_qlist_count);
     }
+#if 0
   if (list_id && list_id->type_list.type_cnt != 0)
     {
       // one new list file
@@ -14728,6 +14732,7 @@ end:
       // no new list files
       assert (thread_p->m_qlist_count == qlist_enter_count);
     }
+#endif
 #endif // SERVER_MODE
 
 #if defined(ENABLE_SYSTEMTAP)
@@ -21858,7 +21863,7 @@ qexec_execute_build_indexes (THREAD_ENTRY * thread_p, XASL_NODE * xasl, XASL_STA
   free_and_init (attr_names);
 
   catalog_free_representation_and_init (disk_repr_p);
-  heap_classrepr_free_and_init (rep, &idx_incache);
+  heap_classrepr_free_and_init (thread_p, rep, &idx_incache);
   if (heap_scancache_end (thread_p, &scan) != NO_ERROR)
     {
       GOTO_EXIT_ON_ERROR;
@@ -21929,7 +21934,7 @@ exit_on_error:
 
   if (rep)
     {
-      heap_classrepr_free_and_init (rep, &idx_incache);
+      heap_classrepr_free_and_init (thread_p, rep, &idx_incache);
     }
 
   heap_scancache_end (thread_p, &scan);
@@ -22855,7 +22860,7 @@ qexec_execute_build_columns (THREAD_ENTRY * thread_p, XASL_NODE * xasl, XASL_STA
 
   free_and_init (out_values);
 
-  heap_classrepr_free_and_init (rep, &idx_incache);
+  heap_classrepr_free_and_init (thread_p, rep, &idx_incache);
   if (heap_scancache_end (thread_p, &scan) != NO_ERROR)
     {
       GOTO_EXIT_ON_ERROR;
@@ -22893,7 +22898,7 @@ exit_on_error:
 
   if (rep)
     {
-      heap_classrepr_free_and_init (rep, &idx_incache);
+      heap_classrepr_free_and_init (thread_p, rep, &idx_incache);
     }
 
   heap_scancache_end (thread_p, &scan);

@@ -4818,6 +4818,8 @@ log_add_to_modified_class_list (THREAD_ENTRY * thread_p, const char *classname, 
       return ER_FAILED;
     }
 
+  assert (tdes->fixed_classrep_entry == NULL);
+
 #if !defined(NDEBUG)
   /* check iff duplicated {classname, class_oid} pair */
   for (t = tdes->modified_class_list; t != NULL; t = t->m_next)

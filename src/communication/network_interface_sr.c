@@ -4693,6 +4693,8 @@ sqmgr_execute_query (THREAD_ENTRY * thread_p, unsigned int rid, char *request, i
   LOG_TDES *tdes;
   TRAN_STATE tran_state;
   bool is_tran_auto_commit;
+  XASL_CLONE xclone = XASL_CLONE_INITIALIZER;
+  XQMGR_EXECUTE_QUERY_CTX query_exec_ctx;
 
   trace_slow_msec = prm_get_integer_value (PRM_ID_SQL_TRACE_SLOW_MSECS);
   trace_ioreads = prm_get_integer_value (PRM_ID_SQL_TRACE_IOREADS);
@@ -4779,16 +4781,19 @@ sqmgr_execute_query (THREAD_ENTRY * thread_p, unsigned int rid, char *request, i
     }
 
   CACHE_TIME_RESET (&srv_cache_time);
+  heap_enable_fixing_last_classrep_entry (thread_p);
+  XQMGR_INIT_QUERY_CTX (&query_exec_ctx, NULL, &xclone);
 
   /* call the server routine of query execute */
   list_id = xqmgr_execute_query (thread_p, &xasl_id, &query_id, dbval_cnt, data, &query_flag, &clt_cache_time,
-				 &srv_cache_time, query_timeout, &xasl_cache_entry_p);
+				 &srv_cache_time, query_timeout, &query_exec_ctx);
 
   if (data != NULL && data != aligned_data_buf)
     {
       free_and_init (data);
     }
 
+  xasl_cache_entry_p = query_exec_ctx.xcache_entry;
   if (xasl_cache_entry_p != NULL)
     {
       info = xasl_cache_entry_p->sql_info;
@@ -4837,8 +4842,11 @@ null_list:
 	       * may be aborted. Otherwise, another transaction may be resumed and xasl_cache_entry_p may be removed by
 	       * that transaction, during class deletion. */
 	      has_xasl_entry = true;
-	      xcache_unfix (thread_p, xasl_cache_entry_p);
+	      xqmgr_clear_query_ctx (thread_p, &query_exec_ctx);
 	      xasl_cache_entry_p = NULL;
+	      heap_unfix_last_classrep_entry (thread_p);
+
+	      heap_disable_fixing_last_classrep_entry (thread_p);
 	    }
 	}
 
@@ -4978,8 +4986,13 @@ null_list:
   if (xasl_cache_entry_p != NULL)
     {
       has_xasl_entry = true;
-      xcache_unfix (thread_p, xasl_cache_entry_p);
-      xasl_cache_entry_p = NULL;
+
+      //xqmgr_clear_query_ctx(thread_p, &query_exec_ctx);      
+
+      //heap_unfix_last_classrep_entry(thread_p);
+
+      //heap_disable_fixing_last_classrep_entry(thread_p);
+      //xasl_cache_entry_p = NULL;
     }
 
   /* pack 'QUERY_END' as a first argument of the reply */
@@ -5034,6 +5047,11 @@ null_list:
       ptr = or_pack_int (ptr, (int) should_conn_reset);
     }
 
+  /* Clear query ctx. */
+  xqmgr_clear_query_ctx (thread_p, &query_exec_ctx);
+  heap_unfix_last_classrep_entry (thread_p);
+  heap_disable_fixing_last_classrep_entry (thread_p);
+
 #if !defined(NDEBUG)
   /* suppress valgrind UMW error */
   memset (ptr, 0, OR_ALIGNED_BUF_SIZE (a_reply) - (ptr - reply));
@@ -5053,6 +5071,9 @@ null_list:
     }
 
 exit:
+  /* Clear postponed XASL - TODO be sure that query cache can't be deleted */
+  xqmgr_clear_query_ctx (thread_p, &query_exec_ctx);
+
   if (p_net_Deferred_end_queries != net_Deferred_end_queries)
     {
       free_and_init (p_net_Deferred_end_queries);
