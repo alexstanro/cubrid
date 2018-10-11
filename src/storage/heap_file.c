@@ -390,7 +390,7 @@ static HEAP_CLASSREPR_CACHE heap_Classrepr_cache = {
 #define CLASSREPR_HASH_SIZE  (heap_Classrepr_cache.num_entries * 2)
 #define REPR_HASH(class_oid) (OID_PSEUDO_KEY(class_oid)%CLASSREPR_HASH_SIZE)
 
-#define HEAP_MAYNEED_DECACHE_GUESSED_LASTREPRS(class_oid, hfid) \
+#define HEAP_MAYNEED_DECACHE_GUESSED_LASTREPRS(thread_p, class_oid, hfid) \
   do \
     { \
       if (heap_Classrepr != NULL && (hfid) != NULL) \
@@ -398,7 +398,7 @@ static HEAP_CLASSREPR_CACHE heap_Classrepr_cache = {
 	  if (HFID_IS_NULL (&(heap_Classrepr->rootclass_hfid))) \
 	    (void) boot_find_root_heap (&(heap_Classrepr->rootclass_hfid)); \
 	  if (HFID_EQ ((hfid), &(heap_Classrepr->rootclass_hfid))) \
-	    (void) heap_classrepr_decache_guessed_last (class_oid); \
+	    (void) heap_classrepr_decache_guessed_last (thread_p, class_oid); \
 	} \
     } \
   while (0)
@@ -576,7 +576,7 @@ static PAGE_PTR heap_scan_pb_lock_and_fetch_debug (THREAD_ENTRY * thread_p, cons
 
 static int heap_classrepr_initialize_cache (void);
 static int heap_classrepr_finalize_cache (void);
-static int heap_classrepr_decache_guessed_last (const OID * class_oid);
+static int heap_classrepr_decache_guessed_last (THREAD_ENTRY * thread_p, const OID * class_oid);
 #ifdef SERVER_MODE
 static int heap_classrepr_lock_class (THREAD_ENTRY * thread_p, HEAP_CLASSREPR_HASH * hash_anchor,
 				      const OID * class_oid);
@@ -858,6 +858,9 @@ STATIC_INLINE int heap_copy_chain (THREAD_ENTRY * thread_p, PAGE_PTR page_heap, 
   __attribute__ ((ALWAYS_INLINE));
 STATIC_INLINE int heap_get_last_vpid (THREAD_ENTRY * thread_p, const HFID * hfid, VPID * last_vpid)
   __attribute__ ((ALWAYS_INLINE));
+static HEAP_CLASSREPR_ENTRY *heap_find_fixed_last_classrep_entry_by_oid (THREAD_ENTRY * thread_p,
+									 const OID * class_oid);
+static bool heap_is_cache_entry_fixed (THREAD_ENTRY * thread_p, HEAP_CLASSREPR_ENTRY * cache_entry);
 
 /*
  * heap_hash_vpid () - Hash a page identifier
@@ -1595,7 +1598,7 @@ heap_classrepr_entry_remove_from_LRU (HEAP_CLASSREPR_ENTRY * cache_entry)
  *       1: During normal update
  */
 static int
-heap_classrepr_decache_guessed_last (const OID * class_oid)
+heap_classrepr_decache_guessed_last (THREAD_ENTRY * thread_p, const OID * class_oid)
 {
   HEAP_CLASSREPR_ENTRY *cache_entry, *prev_entry, *cur_entry;
   HEAP_CLASSREPR_HASH *hash_anchor;
@@ -1604,6 +1607,7 @@ heap_classrepr_decache_guessed_last (const OID * class_oid)
 
   if (class_oid != NULL)
     {
+      heap_unfix_last_classrep_entry_by_oid (thread_p, class_oid);
       hash_anchor = &heap_Classrepr->hash_table[REPR_HASH (class_oid)];
 
     search_begin:
@@ -1740,7 +1744,7 @@ heap_classrepr_decache (THREAD_ENTRY * thread_p, const OID * class_oid)
 {
   int ret;
 
-  ret = heap_classrepr_decache_guessed_last (class_oid);
+  ret = heap_classrepr_decache_guessed_last (thread_p, class_oid);
   if (ret != NO_ERROR)
     {
       return ret;
@@ -1763,6 +1767,7 @@ heap_classrepr_decache (THREAD_ENTRY * thread_p, const OID * class_oid)
 /*
  * heap_classrepr_free () - Free a class representation
  *   return: NO_ERROR
+ *   thread_p(in): thread entry
  *   classrep(in): The class representation structure
  *   idx_incache(in): An index if the desired class representation is part of
  *                    the cache, otherwise -1 (no part of cache)
@@ -1778,11 +1783,16 @@ heap_classrepr_decache (THREAD_ENTRY * thread_p, const OID * class_oid)
  * NOTE: consider to use heap_classrepr_free_and_init.
  */
 int
-heap_classrepr_free (OR_CLASSREP * classrep, int *idx_incache)
+heap_classrepr_free (THREAD_ENTRY * thread_p, OR_CLASSREP * classrep, int *idx_incache)
 {
   HEAP_CLASSREPR_ENTRY *cache_entry;
   int rv;
   int ret = NO_ERROR;
+
+  /*cache_entry = heap_get_fixed_last_classrep_entry (thread_p, classrep->class);
+     static HEAP_CLASSREPR_ENTRY *
+     heap_get_fixed_last_classrep_entry(THREAD_ENTRY * thread_p, const OID * class_oid)
+   */
 
   if (*idx_incache < 0)
     {
@@ -1791,6 +1801,11 @@ heap_classrepr_free (OR_CLASSREP * classrep, int *idx_incache)
     }
 
   cache_entry = &heap_Classrepr_cache.area[*idx_incache];
+  if (heap_is_cache_entry_fixed (thread_p, cache_entry))
+    {
+      /* Do not free, fixed cache entry. */
+      return NO_ERROR;
+    }
 
   rv = pthread_mutex_lock (&cache_entry->mutex);
   cache_entry->fcnt--;
@@ -2172,6 +2187,38 @@ end:
   return repr;
 }
 
+static HEAP_CLASSREPR_ENTRY *
+heap_find_fixed_last_classrep_entry_by_oid (THREAD_ENTRY * thread_p, const OID * class_oid)
+{
+  LOG_TDES *tdes = LOG_FIND_CURRENT_TDES (thread_p);
+  assert (class_oid != NULL);
+
+  if (tdes != NULL)
+    {
+      HEAP_CLASSREPR_ENTRY *cache_entry = (HEAP_CLASSREPR_ENTRY *) tdes->fixed_classrep_entry;
+      if (cache_entry != NULL && OID_EQ (&cache_entry->class_oid, class_oid))
+	{
+	  return cache_entry;
+	}
+    }
+
+  return NULL;
+}
+
+static bool
+heap_is_cache_entry_fixed (THREAD_ENTRY * thread_p, HEAP_CLASSREPR_ENTRY * cache_entry)
+{
+  LOG_TDES *tdes = LOG_FIND_CURRENT_TDES (thread_p);
+
+  if (tdes != NULL && tdes->fixed_classrep_entry == cache_entry)
+    {
+      return true;
+    }
+
+  return false;
+}
+
+
 /*
  * heap_classrepr_get () - Obtain the desired class representation
  *   return: classrepr
@@ -2194,6 +2241,34 @@ heap_classrepr_get (THREAD_ENTRY * thread_p, const OID * class_oid, RECDES * cla
   OR_CLASSREP *repr_last = NULL;
   REPR_ID last_reprid;
   int r;
+  bool is_cache_entry_fixed = false;
+
+  cache_entry = heap_find_fixed_last_classrep_entry_by_oid (thread_p, class_oid);
+  if (cache_entry != NULL)
+    {
+      is_cache_entry_fixed = true;
+      if (reprid == NULL_REPRID || cache_entry->last_reprid == reprid)
+	{
+#if defined (SERVER_MODE)
+	  assert (lock_get_class_lock (thread_p, class_oid, LOG_FIND_THREAD_TRAN_INDEX (thread_p)) != NULL);
+#endif
+	  repr = cache_entry->repr[cache_entry->last_reprid];
+	  assert (repr != NULL);
+
+	  *idx_incache = cache_entry->idx;
+	  return repr;
+	}
+      else
+	{
+	  repr = cache_entry->repr[reprid];
+	  if (repr != NULL)
+	    {
+	      *idx_incache = cache_entry->idx;
+	      return repr;
+	    }
+	}
+      cache_entry = NULL;
+    }
 
   *idx_incache = -1;
 
@@ -2404,6 +2479,7 @@ search_begin:
 
 #endif /* DEBUG_CLASSREPR_CACHE */
       *idx_incache = cache_entry->idx;
+      heap_fix_last_classrep_entry (thread_p, cache_entry);
 
       /* Add to hash chain, and remove lock for class_oid */
       r = pthread_mutex_lock (&hash_anchor->hash_mutex);
@@ -2463,8 +2539,15 @@ search_begin:
 	    }
 	}
 
-      cache_entry->fcnt++;
+      if (!is_cache_entry_fixed)
+	{
+	  assert (cache_entry->last_reprid == reprid);
+	  cache_entry->fcnt++;
+	}
+
       *idx_incache = cache_entry->idx;
+
+      heap_fix_last_classrep_entry (thread_p, cache_entry);
     }
   pthread_mutex_unlock (&cache_entry->mutex);
 
@@ -6770,7 +6853,7 @@ heap_scancache_start_modify (THREAD_ENTRY * thread_p, HEAP_SCANCACHE * scan_cach
 	  if (scan_cache->index_stat_info == NULL)
 	    {
 	      ret = ER_OUT_OF_VIRTUAL_MEMORY;
-	      heap_classrepr_free_and_init (classrepr, &classrepr_cacheindex);
+	      heap_classrepr_free_and_init (thread_p, classrepr, &classrepr_cacheindex);
 	      goto exit_on_error;
 	    }
 	  /* initialize the structure */
@@ -6784,7 +6867,7 @@ heap_scancache_start_modify (THREAD_ENTRY * thread_p, HEAP_SCANCACHE * scan_cach
 	}
 
       /* free class representation */
-      heap_classrepr_free_and_init (classrepr, &classrepr_cacheindex);
+      heap_classrepr_free_and_init (thread_p, classrepr, &classrepr_cacheindex);
     }
 
   /* In case of SINGLE_ROW_INSERT, SINGLE_ROW_UPDATE, SINGLE_ROW_DELETE, or SINGLE_ROW_MODIFY, the 'num_btids' and
@@ -9799,7 +9882,7 @@ heap_attrinfo_recache (THREAD_ENTRY * thread_p, REPR_ID reprid, HEAP_CACHE_ATTRI
        */
       if (attr_info->read_classrepr != attr_info->last_classrepr)
 	{
-	  heap_classrepr_free_and_init (attr_info->read_classrepr, &attr_info->read_cacheindex);
+	  heap_classrepr_free_and_init (thread_p, attr_info->read_classrepr, &attr_info->read_cacheindex);
 	}
       attr_info->read_classrepr = NULL;
     }
@@ -9847,7 +9930,7 @@ heap_attrinfo_recache (THREAD_ENTRY * thread_p, REPR_ID reprid, HEAP_CACHE_ATTRI
 
   if (heap_attrinfo_recache_attrepr (attr_info, false) != NO_ERROR)
     {
-      heap_classrepr_free_and_init (attr_info->read_classrepr, &attr_info->read_cacheindex);
+      heap_classrepr_free_and_init (thread_p, attr_info->read_classrepr, &attr_info->read_cacheindex);
 
       goto exit_on_error;
     }
@@ -9886,7 +9969,7 @@ heap_attrinfo_end (THREAD_ENTRY * thread_p, HEAP_CACHE_ATTRINFO * attr_info)
 
   if (attr_info->last_classrepr != NULL)
     {
-      heap_classrepr_free_and_init (attr_info->last_classrepr, &attr_info->last_cacheindex);
+      heap_classrepr_free_and_init (thread_p, attr_info->last_classrepr, &attr_info->last_cacheindex);
     }
 
   if (attr_info->values)
@@ -11812,7 +11895,7 @@ heap_attrinfo_start_refoids (THREAD_ENTRY * thread_p, OID * class_oid, HEAP_CACH
 	{
 	  er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_OUT_OF_VIRTUAL_MEMORY, 1,
 		  classrepr->n_attributes * sizeof (ATTR_ID));
-	  heap_classrepr_free_and_init (classrepr, &classrepr_cacheindex);
+	  heap_classrepr_free_and_init (thread_p, classrepr, &classrepr_cacheindex);
 	  return ER_OUT_OF_VIRTUAL_MEMORY;
 	}
     }
@@ -11837,7 +11920,7 @@ heap_attrinfo_start_refoids (THREAD_ENTRY * thread_p, OID * class_oid, HEAP_CACH
       free_and_init (set_attrids);
     }
 
-  heap_classrepr_free_and_init (classrepr, &classrepr_cacheindex);
+  heap_classrepr_free_and_init (thread_p, classrepr, &classrepr_cacheindex);
 
   return ret;
 }
@@ -11887,7 +11970,7 @@ heap_attrinfo_start_with_index (THREAD_ENTRY * thread_p, OID * class_oid, RECDES
 	{
 	  er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_OUT_OF_VIRTUAL_MEMORY, 1,
 		  classrepr->n_attributes * sizeof (ATTR_ID));
-	  heap_classrepr_free_and_init (classrepr, &classrepr_cacheindex);
+	  heap_classrepr_free_and_init (thread_p, classrepr, &classrepr_cacheindex);
 	  return ER_OUT_OF_VIRTUAL_MEMORY;
 	}
     }
@@ -11955,7 +12038,7 @@ heap_attrinfo_start_with_index (THREAD_ENTRY * thread_p, OID * class_oid, RECDES
       attr_info->num_values = -1;
 
       /* free the class representation */
-      heap_classrepr_free_and_init (classrepr, &classrepr_cacheindex);
+      heap_classrepr_free_and_init (thread_p, classrepr, &classrepr_cacheindex);
     }
   else
     {				/* num_found_attrs > 0 */
@@ -11980,7 +12063,7 @@ heap_attrinfo_start_with_index (THREAD_ENTRY * thread_p, OID * class_oid, RECDES
 	  if (attr_info->values == NULL)
 	    {
 	      /* free the class representation */
-	      heap_classrepr_free_and_init (classrepr, &classrepr_cacheindex);
+	      heap_classrepr_free_and_init (thread_p, classrepr, &classrepr_cacheindex);
 	      attr_info->num_values = -1;
 	      goto error;
 	    }
@@ -12150,7 +12233,7 @@ heap_attrinfo_start_with_btid (THREAD_ENTRY * thread_p, OID * class_oid, BTID * 
       set_attrids[i] = classrepr->indexes[index_id].atts[i]->id;
     }
 
-  heap_classrepr_free_and_init (classrepr, &classrepr_cacheindex);
+  heap_classrepr_free_and_init (thread_p, classrepr, &classrepr_cacheindex);
 
   /* 
    *  Get the attribute information for the collected ID's
@@ -12178,7 +12261,7 @@ error:
 
   if (classrepr)
     {
-      heap_classrepr_free_and_init (classrepr, &classrepr_cacheindex);
+      heap_classrepr_free_and_init (thread_p, classrepr, &classrepr_cacheindex);
     }
 
   if (set_attrids != guess_attrids)
@@ -12964,7 +13047,7 @@ heap_get_index_with_name (THREAD_ENTRY * thread_p, OID * class_oid, const char *
     }
   if (classrep != NULL)
     {
-      heap_classrepr_free_and_init (classrep, &idx_in_cache);
+      heap_classrepr_free_and_init (thread_p, classrep, &idx_in_cache);
     }
 
   return error;
@@ -13093,7 +13176,7 @@ heap_get_indexinfo_of_btid (THREAD_ENTRY * thread_p, const OID * class_oid, cons
     }
 
   /* free the class representation */
-  heap_classrepr_free_and_init (classrepp, &idx_in_cache);
+  heap_classrepr_free_and_init (thread_p, classrepp, &idx_in_cache);
 
   return ret;
 
@@ -13120,7 +13203,7 @@ exit_on_error:
 
   if (classrepp)
     {
-      heap_classrepr_free_and_init (classrepp, &idx_in_cache);
+      heap_classrepr_free_and_init (thread_p, classrepp, &idx_in_cache);
     }
 
   return (ret == NO_ERROR && (ret = er_errid ()) == NO_ERROR) ? ER_FAILED : ret;
@@ -16329,7 +16412,7 @@ heap_get_class_repr_id (THREAD_ENTRY * thread_p, OID * class_oid)
     }
 
   id = rep->id;
-  heap_classrepr_free_and_init (rep, &idx_incache);
+  heap_classrepr_free_and_init (thread_p, rep, &idx_incache);
 
   return id;
 }
@@ -16463,7 +16546,7 @@ heap_set_autoincrement_value (THREAD_ENTRY * thread_p, HEAP_CACHE_ATTRINFO * att
 		  search_result =
 		    xbtree_find_unique (thread_p, &serial_btid, S_SELECT, &key_val, &serial_class_oid, &serial_oid,
 					false);
-		  heap_classrepr_free_and_init (classrep, &idx_in_cache);
+		  heap_classrepr_free_and_init (thread_p, classrep, &idx_in_cache);
 		  if (search_result != BTREE_KEY_FOUND)
 		    {
 		      ret = ER_FAILED;
@@ -16476,7 +16559,7 @@ heap_set_autoincrement_value (THREAD_ENTRY * thread_p, HEAP_CACHE_ATTRINFO * att
 		}
 	      else
 		{
-		  heap_classrepr_free_and_init (classrep, &idx_in_cache);
+		  heap_classrepr_free_and_init (thread_p, classrep, &idx_in_cache);
 		  ret = ER_FAILED;
 		  goto exit_on_error;
 		}
@@ -16840,7 +16923,7 @@ heap_get_btid_from_index_name (THREAD_ENTRY * thread_p, const OID * p_class_oid,
 exit_cleanup:
   if (classrepr)
     {
-      heap_classrepr_free_and_init (classrepr, &classrepr_cacheindex);
+      heap_classrepr_free_and_init (thread_p, classrepr, &classrepr_cacheindex);
     }
 
 exit:
@@ -22783,7 +22866,7 @@ heap_update_logical (THREAD_ENTRY * thread_p, HEAP_OPERATION_CONTEXT * context)
     }
 
   /* decache guessed representation */
-  HEAP_MAYNEED_DECACHE_GUESSED_LASTREPRS (&context->oid, &context->hfid);
+  HEAP_MAYNEED_DECACHE_GUESSED_LASTREPRS (thread_p, &context->oid, &context->hfid);
 
   /* 
    * Fetch record
@@ -24748,4 +24831,72 @@ heap_is_page_header (THREAD_ENTRY * thread_p, PAGE_PTR page)
       return true;
     }
   return false;
+}
+
+void
+heap_unfix_last_classrep_entry_by_oid (THREAD_ENTRY * thread_p, const OID * class_oid)
+{
+  LOG_TDES *tdes = LOG_FIND_CURRENT_TDES (thread_p);
+  int idx;
+  if (tdes != NULL && tdes->fixed_classrep_entry != NULL)
+    {
+      HEAP_CLASSREPR_ENTRY *cache_entry = (HEAP_CLASSREPR_ENTRY *) tdes->fixed_classrep_entry;
+      assert (cache_entry != NULL);
+      if (OID_EQ (&cache_entry->class_oid, class_oid))
+	{
+	  tdes->fixed_classrep_entry = NULL;
+	  idx = cache_entry->idx;
+	  heap_classrepr_free (thread_p, cache_entry->repr[cache_entry->last_reprid], &idx);
+	}
+    }
+}
+
+void
+heap_unfix_last_classrep_entry (THREAD_ENTRY * thread_p)
+{
+  LOG_TDES *tdes = LOG_FIND_CURRENT_TDES (thread_p);
+  int idx;
+
+  if (tdes != NULL && tdes->fixed_classrep_entry != NULL)
+    {
+      HEAP_CLASSREPR_ENTRY *cache_entry = (HEAP_CLASSREPR_ENTRY *) tdes->fixed_classrep_entry;
+      assert (cache_entry != NULL);
+      tdes->fixed_classrep_entry = NULL;
+      idx = cache_entry->idx;
+      heap_classrepr_free (thread_p, cache_entry->repr[cache_entry->last_reprid], &idx);
+    }
+}
+
+
+bool
+heap_fix_last_classrep_entry (THREAD_ENTRY * thread_p, void *classrep_entry)
+{
+  LOG_TDES *tdes = LOG_FIND_CURRENT_TDES (thread_p);
+  if (tdes->enable_fix_classrep_entry == true && tdes->fixed_classrep_entry == NULL)
+    {
+      tdes->fixed_classrep_entry = classrep_entry;
+      return true;
+    }
+
+  return false;
+}
+
+void
+heap_enable_fixing_last_classrep_entry (THREAD_ENTRY * thread_p)
+{
+  LOG_TDES *tdes = LOG_FIND_CURRENT_TDES (thread_p);
+  if (tdes != NULL && tdes->modified_class_list == NULL)
+    {
+      tdes->enable_fix_classrep_entry = true;
+    }
+}
+
+void
+heap_disable_fixing_last_classrep_entry (THREAD_ENTRY * thread_p)
+{
+  LOG_TDES *tdes = LOG_FIND_CURRENT_TDES (thread_p);
+  if (tdes != NULL)
+    {
+      tdes->enable_fix_classrep_entry = false;
+    }
 }
