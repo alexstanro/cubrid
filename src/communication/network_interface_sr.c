@@ -5048,9 +5048,9 @@ null_list:
     }
 
   /* Clear query ctx. */
-  xqmgr_clear_query_ctx (thread_p, &query_exec_ctx);
-  heap_unfix_last_classrep_entry (thread_p);
-  heap_disable_fixing_last_classrep_entry (thread_p);
+  /*xqmgr_clear_query_ctx (thread_p, &query_exec_ctx);
+     heap_unfix_last_classrep_entry (thread_p);
+     heap_disable_fixing_last_classrep_entry (thread_p); */
 
 #if !defined(NDEBUG)
   /* suppress valgrind UMW error */
@@ -5073,6 +5073,9 @@ null_list:
 exit:
   /* Clear postponed XASL - TODO be sure that query cache can't be deleted */
   xqmgr_clear_query_ctx (thread_p, &query_exec_ctx);
+  heap_unfix_last_classrep_entry (thread_p);
+  heap_disable_fixing_last_classrep_entry (thread_p);
+
 
   if (p_net_Deferred_end_queries != net_Deferred_end_queries)
     {
