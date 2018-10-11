@@ -1755,15 +1755,15 @@ log_final (THREAD_ENTRY * thread_p)
       tdes = LOG_FIND_TDES (i);
       if (i != LOG_SYSTEM_TRAN_INDEX && tdes != NULL && tdes->trid != NULL_TRANID)
 	{
-	  if (LOG_ISTRAN_ACTIVE (tdes))
-	    {
-	      LOG_SET_CURRENT_TRAN_INDEX (thread_p, i);
-	      (void) log_abort (thread_p, i);
-	    }
-	  else
-	    {
-	      anyloose_ends = true;
-	    }
+	  //if (LOG_ISTRAN_ACTIVE (tdes))
+	  {
+	    LOG_SET_CURRENT_TRAN_INDEX (thread_p, i);
+	    (void) log_abort (thread_p, i);
+	  }
+	  /*else
+	     {
+	     anyloose_ends = true;
+	     } */
 	}
     }
 
@@ -5567,7 +5567,7 @@ log_commit_local (THREAD_ENTRY * thread_p, LOG_TDES * tdes, bool retain_lock, bo
 
 	  if (retain_lock != true)
 	    {
-	      lock_unlock_all (thread_p);
+	      lock_unlock_all (thread_p, false);
 	    }
 
 	  /* Flush commit log and change the transaction state. */
@@ -5595,7 +5595,7 @@ log_commit_local (THREAD_ENTRY * thread_p, LOG_TDES * tdes, bool retain_lock, bo
 
       if (retain_lock != true)
 	{
-	  lock_unlock_all (thread_p);
+	  lock_unlock_all (thread_p, false);
 	}
 
       tdes->state = TRAN_UNACTIVE_COMMITTED;
@@ -5647,7 +5647,7 @@ log_abort_local (THREAD_ENTRY * thread_p, LOG_TDES * tdes, bool is_local_tran)
       logtb_complete_mvcc (thread_p, tdes, false);
 
       /* It is safe to release locks here, since we already completed abort. */
-      lock_unlock_all (thread_p);
+      lock_unlock_all (thread_p, true);
     }
   else
     {
@@ -5664,7 +5664,7 @@ log_abort_local (THREAD_ENTRY * thread_p, LOG_TDES * tdes, bool is_local_tran)
       /* clear mvccid before releasing the locks */
       logtb_complete_mvcc (thread_p, tdes, false);
 
-      lock_unlock_all (thread_p);
+      lock_unlock_all (thread_p, true);
 
       /* There is no need to create a new transaction identifier */
     }
@@ -6364,7 +6364,7 @@ log_complete_for_2pc (THREAD_ENTRY * thread_p, LOG_TDES * tdes, LOG_RECTYPE isco
       state = tdes->state;
 
       /* now releases locks */
-      lock_unlock_all (thread_p);
+      lock_unlock_all (thread_p, (iscommitted != LOG_COMMIT));
 
       /* Unblock global oldest active update. */
       if (tdes->block_global_oldest_active_until_commit)
