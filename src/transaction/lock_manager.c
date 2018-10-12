@@ -6287,10 +6287,15 @@ lock_object (THREAD_ENTRY * thread_p, const OID * oid, const OID * class_oid, LO
       if (class_entry != NULL)
 	{
 	  root_class_entry = class_entry->class_entry;
-	  if (root_class_entry != NULL)
+	  while (root_class_entry != NULL)
 	    {
-	      assert (OID_IS_ROOTOID (&root_class_entry->res_head->key.oid));
-	      old_root_class_lock = root_class_entry->granted_mode;
+	      if (OID_IS_ROOTOID (&root_class_entry->res_head->key.oid))
+		{
+		  old_root_class_lock = root_class_entry->granted_mode;
+		  break;
+		}
+
+	      root_class_entry = root_class_entry->class_entry;
 	    }
 
 	  old_class_lock = class_entry->granted_mode;
