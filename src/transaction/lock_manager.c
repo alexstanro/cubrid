@@ -449,113 +449,149 @@ using tran_lock_waiters_array_type = std::array<THREAD_ENTRY *, DEFAULT_LOCK_WAI
 // *INDENT-ON*
 
 #if defined(SERVER_MODE)
-static void lock_initialize_entry (LK_ENTRY * entry_ptr);
-static void lock_initialize_entry_as_granted (LK_ENTRY * entry_ptr, int tran_index, LK_RES * res, LOCK lock);
-static void lock_initialize_entry_as_blocked (LK_ENTRY * entry_ptr, THREAD_ENTRY * thread_p, int tran_index,
-					      LK_RES * res, LOCK lock);
-static void lock_initialize_entry_as_non2pl (LK_ENTRY * entry_ptr, int tran_index, LK_RES * res, LOCK lock);
-static void lock_initialize_resource (LK_RES * res_ptr);
-static void lock_initialize_resource_as_allocated (LK_RES * res_ptr, LOCK lock);
-static unsigned int lock_get_hash_value (const OID * oid, int htsize);
-static int lock_initialize_tran_lock_table (void);
-static int lock_initialize_object_hash_table (void);
-static int lock_initialize_object_lock_res_list (void);
-static int lock_initialize_object_lock_entry_list (void);
-static int lock_initialize_deadlock_detection (void);
-static int lock_remove_resource (THREAD_ENTRY * thread_p, LK_RES * res_ptr);
-static void lock_insert_into_tran_hold_list (LK_ENTRY * entry_ptr, int owner_tran_index);
-static int lock_delete_from_tran_hold_list (LK_ENTRY * entry_ptr, int owner_tran_index);
-static void lock_insert_into_tran_non2pl_list (LK_ENTRY * non2pl, int owner_tran_index);
-static int lock_delete_from_tran_non2pl_list (LK_ENTRY * non2pl, int owner_tran_index);
-static LK_ENTRY *lock_find_tran_hold_entry (THREAD_ENTRY * thread_p, int tran_index, const OID * oid, bool is_class);
-static bool lock_force_timeout_expired_wait_transactions (void *thrd_entry);
-static bool lock_is_local_deadlock_detection_interval_up (void);
-static void lock_detect_local_deadlock (THREAD_ENTRY * thread_p);
-static bool lock_is_class_lock_escalated (LOCK class_lock, LOCK lock_escalation);
-static LK_ENTRY *lock_add_non2pl_lock (THREAD_ENTRY * thread_p, LK_RES * res_ptr, int tran_index, LOCK lock);
-static void lock_position_holder_entry (LK_RES * res_ptr, LK_ENTRY * entry_ptr);
-static void lock_set_error_for_timeout (THREAD_ENTRY * thread_p, LK_ENTRY * entry_ptr);
-static void lock_set_error_for_aborted (LK_ENTRY * entry_ptr);
-static void lock_set_tran_abort_reason (int tran_index, TRAN_ABORT_REASON abort_reason);
-static LOCK_WAIT_STATE lock_suspend (THREAD_ENTRY * thread_p, LK_ENTRY * entry_ptr, int wait_msecs);
-static void lock_resume (LK_ENTRY * entry_ptr, int state);
-static bool lock_wakeup_deadlock_victim_timeout (int tran_index);
-static bool lock_wakeup_deadlock_victim_aborted (int tran_index);
-static void lock_grant_blocked_holder (THREAD_ENTRY * thread_p, LK_RES * res_ptr);
-static int lock_grant_blocked_waiter (THREAD_ENTRY * thread_p, LK_RES * res_ptr);
-static void lock_grant_blocked_waiter_partial (THREAD_ENTRY * thread_p, LK_RES * res_ptr, LK_ENTRY * from_whom);
-static bool lock_check_escalate (THREAD_ENTRY * thread_p, LK_ENTRY * class_entry, LK_TRAN_LOCK * tran_lock);
+STATIC_INLINE void lock_initialize_entry (LK_ENTRY * entry_ptr) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void lock_initialize_entry_as_granted (LK_ENTRY * entry_ptr, int tran_index, LK_RES * res, LOCK lock)
+  __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void lock_initialize_entry_as_blocked (LK_ENTRY * entry_ptr, THREAD_ENTRY * thread_p, int tran_index,
+						     LK_RES * res, LOCK lock) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void lock_initialize_entry_as_non2pl (LK_ENTRY * entry_ptr, int tran_index, LK_RES * res, LOCK lock)
+  __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void lock_initialize_resource (LK_RES * res_ptr) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void lock_initialize_resource_as_allocated (LK_RES * res_ptr, LOCK lock) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE unsigned int lock_get_hash_value (const OID * oid, int htsize) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE int lock_initialize_tran_lock_table (void) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE int lock_initialize_object_hash_table (void) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE int lock_initialize_object_lock_res_list (void) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE int lock_initialize_object_lock_entry_list (void) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE int lock_initialize_deadlock_detection (void) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE int lock_remove_resource (THREAD_ENTRY * thread_p, LK_RES * res_ptr) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void lock_insert_into_tran_hold_list (LK_ENTRY * entry_ptr, int owner_tran_index)
+  __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE int lock_delete_from_tran_hold_list (LK_ENTRY * entry_ptr, int owner_tran_index)
+  __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void lock_insert_into_tran_non2pl_list (LK_ENTRY * non2pl, int owner_tran_index)
+  __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE int lock_delete_from_tran_non2pl_list (LK_ENTRY * non2pl, int owner_tran_index)
+  __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE LK_ENTRY *lock_find_tran_hold_entry (THREAD_ENTRY * thread_p, int tran_index, const OID * oid,
+						   bool is_class) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE bool lock_force_timeout_expired_wait_transactions (void *thrd_entry) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE bool lock_is_local_deadlock_detection_interval_up (void);
+static void lock_detect_local_deadlock (THREAD_ENTRY * thread_p) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE bool lock_is_class_lock_escalated (LOCK class_lock, LOCK lock_escalation) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE LK_ENTRY *lock_add_non2pl_lock (THREAD_ENTRY * thread_p, LK_RES * res_ptr, int tran_index, LOCK lock)
+  __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void lock_position_holder_entry (LK_RES * res_ptr, LK_ENTRY * entry_ptr) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void lock_set_error_for_timeout (THREAD_ENTRY * thread_p, LK_ENTRY * entry_ptr)
+  __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void lock_set_error_for_aborted (LK_ENTRY * entry_ptr) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void lock_set_tran_abort_reason (int tran_index, TRAN_ABORT_REASON abort_reason)
+  __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE LOCK_WAIT_STATE lock_suspend (THREAD_ENTRY * thread_p, LK_ENTRY * entry_ptr, int wait_msecs)
+  __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void lock_resume (LK_ENTRY * entry_ptr, int state) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE bool lock_wakeup_deadlock_victim_timeout (int tran_index) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE bool lock_wakeup_deadlock_victim_aborted (int tran_index) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void lock_grant_blocked_holder (THREAD_ENTRY * thread_p, LK_RES * res_ptr)
+  __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE int lock_grant_blocked_waiter (THREAD_ENTRY * thread_p, LK_RES * res_ptr) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void lock_grant_blocked_waiter_partial (THREAD_ENTRY * thread_p, LK_RES * res_ptr, LK_ENTRY * from_whom)
+  __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE bool lock_check_escalate (THREAD_ENTRY * thread_p, LK_ENTRY * class_entry, LK_TRAN_LOCK * tran_lock)
+  __attribute__ ((ALWAYS_INLINE));
 static int lock_escalate_if_needed (THREAD_ENTRY * thread_p, LK_ENTRY * class_entry, int tran_index);
-static int lock_internal_hold_lock_object_instant (THREAD_ENTRY * thread_p, int tran_index, const OID * oid,
-						   const OID * class_oid, LOCK lock);
-static int lock_internal_perform_lock_object (THREAD_ENTRY * thread_p, int tran_index, const OID * oid,
-					      const OID * class_oid, LOCK lock, int wait_msecs,
-					      LK_ENTRY ** entry_addr_ptr, LK_ENTRY * class_entry);
-static void lock_internal_perform_unlock_object (THREAD_ENTRY * thread_p, int tran_index, LK_ENTRY * entry_ptr,
-						 bool release_flag, bool move_to_non2pl);
-static void lock_unlock_object_by_isolation (THREAD_ENTRY * thread_p, int tran_index, TRAN_ISOLATION isolation,
-					     const OID * class_oid, const OID * oid);
-static void lock_unlock_inst_locks_of_class_by_isolation (THREAD_ENTRY * thread_p, int tran_index,
-							  TRAN_ISOLATION isolation, const OID * class_oid);
-static int lock_internal_demote_class_lock (THREAD_ENTRY * thread_p, LK_ENTRY * entry_ptr, LOCK to_be_lock,
-					    LOCK * ex_lock);
-static void lock_demote_all_shared_class_locks (THREAD_ENTRY * thread_p, int tran_index);
-static void lock_unlock_shared_inst_lock (THREAD_ENTRY * thread_p, int tran_index, const OID * inst_oid);
-static void lock_remove_all_class_locks (THREAD_ENTRY * thread_p, int tran_index, LOCK lock);
-static void lock_remove_non2pl (THREAD_ENTRY * thread_p, LK_ENTRY * non2pl, int tran_index);
-static void lock_update_non2pl_list (THREAD_ENTRY * thread_p, LK_RES * res_ptr, int tran_index, LOCK lock);
-static int lock_add_WFG_edge (int from_tran_index, int to_tran_index, int holder_flag, INT64 edge_wait_stime);
-static void lock_select_deadlock_victim (THREAD_ENTRY * thread_p, int s, int t);
-static void lock_dump_deadlock_victims (THREAD_ENTRY * thread_p, FILE * outfile);
-static int lock_compare_lock_info (const void *lockinfo1, const void *lockinfo2);
-static float lock_wait_msecs_to_secs (int msecs);
-static void lock_dump_resource (THREAD_ENTRY * thread_p, FILE * outfp, LK_RES * res_ptr);
+STATIC_INLINE int lock_internal_hold_lock_object_instant (THREAD_ENTRY * thread_p, int tran_index, const OID * oid,
+							  const OID * class_oid, LOCK lock)
+  __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE int lock_internal_perform_lock_object (THREAD_ENTRY * thread_p, int tran_index, const OID * oid,
+						     const OID * class_oid, LOCK lock, int wait_msecs,
+						     LK_ENTRY ** entry_addr_ptr, LK_ENTRY * class_entry)
+  __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void lock_internal_perform_unlock_object (THREAD_ENTRY * thread_p, int tran_index, LK_ENTRY * entry_ptr,
+							bool release_flag, bool move_to_non2pl)
+  __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void lock_unlock_object_by_isolation (THREAD_ENTRY * thread_p, int tran_index, TRAN_ISOLATION isolation,
+						    const OID * class_oid, const OID * oid)
+  __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void lock_unlock_inst_locks_of_class_by_isolation (THREAD_ENTRY * thread_p, int tran_index,
+								 TRAN_ISOLATION isolation, const OID * class_oid)
+  __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE int lock_internal_demote_class_lock (THREAD_ENTRY * thread_p, LK_ENTRY * entry_ptr, LOCK to_be_lock,
+						   LOCK * ex_lock) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void lock_demote_all_shared_class_locks (THREAD_ENTRY * thread_p, int tran_index)
+  __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void lock_unlock_shared_inst_lock (THREAD_ENTRY * thread_p, int tran_index, const OID * inst_oid)
+  __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void lock_remove_all_class_locks (THREAD_ENTRY * thread_p, int tran_index, LOCK lock)
+  __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void lock_remove_non2pl (THREAD_ENTRY * thread_p, LK_ENTRY * non2pl, int tran_index)
+  __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void lock_update_non2pl_list (THREAD_ENTRY * thread_p, LK_RES * res_ptr, int tran_index, LOCK lock)
+  __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE int lock_add_WFG_edge (int from_tran_index, int to_tran_index, int holder_flag, INT64 edge_wait_stime)
+  __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void lock_select_deadlock_victim (THREAD_ENTRY * thread_p, int s, int t) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void lock_dump_deadlock_victims (THREAD_ENTRY * thread_p, FILE * outfile) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE int lock_compare_lock_info (const void *lockinfo1, const void *lockinfo2) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE float lock_wait_msecs_to_secs (int msecs) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void lock_dump_resource (THREAD_ENTRY * thread_p, FILE * outfp, LK_RES * res_ptr)
+  __attribute__ ((ALWAYS_INLINE));
 #if defined (ENABLE_UNUSED_FUNCTION)
 static bool lock_check_consistent_resource (THREAD_ENTRY * thread_p, LK_RES * res_ptr);
 static bool lock_check_consistent_tran_lock (LK_TRAN_LOCK * tran_lock);
 #endif
 
-static void lock_increment_class_granules (LK_ENTRY * class_entry);
+STATIC_INLINE void lock_increment_class_granules (LK_ENTRY * class_entry) __attribute__ ((ALWAYS_INLINE));
 
-static void lock_decrement_class_granules (LK_ENTRY * class_entry);
-static LK_ENTRY *lock_find_class_entry (int tran_index, const OID * class_oid);
+STATIC_INLINE void lock_decrement_class_granules (LK_ENTRY * class_entry) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE LK_ENTRY *lock_find_class_entry (int tran_index, const OID * class_oid) __attribute__ ((ALWAYS_INLINE));
 
-static void lock_event_log_tran_locks (THREAD_ENTRY * thread_p, FILE * log_fp, int tran_index);
-static void lock_event_log_blocked_lock (THREAD_ENTRY * thread_p, FILE * log_fp, LK_ENTRY * entry);
-static void lock_event_log_blocking_locks (THREAD_ENTRY * thread_p, FILE * log_fp, LK_ENTRY * wait_entry);
-static void lock_event_log_lock_info (THREAD_ENTRY * thread_p, FILE * log_fp, LK_ENTRY * entry);
-static void lock_event_set_tran_wait_entry (int tran_index, LK_ENTRY * entry);
-static void lock_event_set_xasl_id_to_entry (int tran_index, LK_ENTRY * entry);
-static LK_RES_KEY lock_create_search_key (OID * oid, OID * class_oid);
+STATIC_INLINE void lock_event_log_tran_locks (THREAD_ENTRY * thread_p, FILE * log_fp, int tran_index)
+  __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void lock_event_log_blocked_lock (THREAD_ENTRY * thread_p, FILE * log_fp, LK_ENTRY * entry)
+  __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void lock_event_log_blocking_locks (THREAD_ENTRY * thread_p, FILE * log_fp, LK_ENTRY * wait_entry)
+  __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void lock_event_log_lock_info (THREAD_ENTRY * thread_p, FILE * log_fp, LK_ENTRY * entry)
+  __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void lock_event_set_tran_wait_entry (int tran_index, LK_ENTRY * entry) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void lock_event_set_xasl_id_to_entry (int tran_index, LK_ENTRY * entry) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE LK_RES_KEY lock_create_search_key (OID * oid, OID * class_oid) __attribute__ ((ALWAYS_INLINE));
 #if defined (SERVER_MODE)
-static bool lock_is_safe_lock_with_page (THREAD_ENTRY * thread_p, LK_ENTRY * entry_ptr);
+STATIC_INLINE bool lock_is_safe_lock_with_page (THREAD_ENTRY * thread_p, LK_ENTRY * entry_ptr)
+  __attribute__ ((ALWAYS_INLINE));
 #endif /* SERVER_MODE */
 
-static LK_ENTRY *lock_get_new_entry (int tran_index, LF_TRAN_ENTRY * tran_entry, LF_FREELIST * freelist);
-static void lock_free_entry (int tran_index, LF_TRAN_ENTRY * tran_entry, LF_FREELIST * freelist, LK_ENTRY * lock_entry);
+STATIC_INLINE LK_ENTRY *lock_get_new_entry (int tran_index, LF_TRAN_ENTRY * tran_entry, LF_FREELIST * freelist)
+  __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void lock_free_entry (int tran_index, LF_TRAN_ENTRY * tran_entry, LF_FREELIST * freelist,
+				    LK_ENTRY * lock_entry) __attribute__ ((ALWAYS_INLINE));
 
-static void lock_victimize_first_thread_mapfunc (THREAD_ENTRY & thread_ref, bool & stop_mapper);
-static void lock_check_timeout_expired_and_count_suspended_mapfunc (THREAD_ENTRY & thread_ref, bool & stop_mapper,
-								    size_t & suspend_count);
-static void lock_get_transaction_lock_waiting_threads_mapfunc (THREAD_ENTRY & thread_ref, bool & stop_mapper,
-							       int tran_index,
-							       tran_lock_waiters_array_type & tran_lock_waiters,
-							       size_t & count);
-static void lock_get_transaction_lock_waiting_threads (int tran_index, tran_lock_waiters_array_type & tran_lock_waiters,
-						       size_t & count);
+STATIC_INLINE void lock_victimize_first_thread_mapfunc (THREAD_ENTRY & thread_ref, bool & stop_mapper)
+  __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void lock_check_timeout_expired_and_count_suspended_mapfunc (THREAD_ENTRY & thread_ref,
+									   bool & stop_mapper, size_t & suspend_count)
+  __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void lock_get_transaction_lock_waiting_threads_mapfunc (THREAD_ENTRY & thread_ref, bool & stop_mapper,
+								      int tran_index,
+								      tran_lock_waiters_array_type & tran_lock_waiters,
+								      size_t & count) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE void lock_get_transaction_lock_waiting_threads (int tran_index,
+							      tran_lock_waiters_array_type & tran_lock_waiters,
+							      size_t & count) __attribute__ ((ALWAYS_INLINE));
 
 // *INDENT-OFF*
 static cubthread::daemon *lock_Deadlock_detect_daemon = NULL;
 
-static void lock_deadlock_detect_daemon_init ();
-static void lock_deadlock_detect_daemon_destroy ();
+STATIC_INLINE  void lock_deadlock_detect_daemon_init () __attribute__((ALWAYS_INLINE));
+STATIC_INLINE  void lock_deadlock_detect_daemon_destroy () __attribute__((ALWAYS_INLINE));
 // *INDENT-ON*
 
 /* object lock entry */
-static void *lock_alloc_entry (void);
-static int lock_dealloc_entry (void *res);
-static int lock_init_entry (void *res);
-static int lock_uninit_entry (void *res);
+STATIC_INLINE void *lock_alloc_entry (void) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE int lock_dealloc_entry (void *res) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE int lock_init_entry (void *res) __attribute__ ((ALWAYS_INLINE));
+STATIC_INLINE int lock_uninit_entry (void *res) __attribute__ ((ALWAYS_INLINE));
 
 LF_ENTRY_DESCRIPTOR obj_lock_entry_desc = {
   offsetof (LK_ENTRY, stack),
@@ -577,13 +613,13 @@ LF_ENTRY_DESCRIPTOR obj_lock_entry_desc = {
 /*
  * Object lock resource
  */
-static void *lock_alloc_resource (void);
-static int lock_dealloc_resource (void *res);
-static int lock_init_resource (void *res);
-static int lock_uninit_resource (void *res);
-static int lock_res_key_copy (void *src, void *dest);
-static int lock_res_key_compare (void *k1, void *k2);
-static unsigned int lock_res_key_hash (void *key, int htsize);
+STATIC_INLINE void *lock_alloc_resource (void);
+STATIC_INLINE int lock_dealloc_resource (void *res);
+STATIC_INLINE int lock_init_resource (void *res);
+STATIC_INLINE int lock_uninit_resource (void *res);
+STATIC_INLINE int lock_res_key_copy (void *src, void *dest);
+STATIC_INLINE int lock_res_key_compare (void *k1, void *k2);
+STATIC_INLINE unsigned int lock_res_key_hash (void *key, int htsize);
 
 LF_ENTRY_DESCRIPTOR obj_lock_res_desc = {
   offsetof (LK_RES, stack),
@@ -604,7 +640,7 @@ LF_ENTRY_DESCRIPTOR obj_lock_res_desc = {
 #endif /* SERVER_MODE */
 
 #if defined(SERVER_MODE)
-static LK_RES_KEY
+STATIC_INLINE LK_RES_KEY
 lock_create_search_key (OID * oid, OID * class_oid)
 {
   LK_RES_KEY search_key;
@@ -649,20 +685,20 @@ lock_create_search_key (OID * oid, OID * class_oid)
   return search_key;
 }
 
-static void *
+STATIC_INLINE void *
 lock_alloc_entry (void)
 {
   return malloc (sizeof (LK_ENTRY));
 }
 
-static int
+STATIC_INLINE int
 lock_dealloc_entry (void *res)
 {
   free (res);
   return NO_ERROR;
 }
 
-static int
+STATIC_INLINE int
 lock_init_entry (void *entry)
 {
   LK_ENTRY *entry_ptr = (LK_ENTRY *) entry;
@@ -677,7 +713,7 @@ lock_init_entry (void *entry)
     }
 }
 
-static int
+STATIC_INLINE int
 lock_uninit_entry (void *entry)
 {
   LK_ENTRY *entry_ptr = (LK_ENTRY *) entry;
@@ -693,7 +729,7 @@ lock_uninit_entry (void *entry)
   return NO_ERROR;
 }
 
-static void *
+STATIC_INLINE void *
 lock_alloc_resource (void)
 {
   LK_RES *res_ptr = (LK_RES *) malloc (sizeof (LK_RES));
@@ -704,7 +740,7 @@ lock_alloc_resource (void)
   return res_ptr;
 }
 
-static int
+STATIC_INLINE int
 lock_dealloc_resource (void *res)
 {
   LK_RES *res_ptr = (LK_RES *) res;
@@ -721,7 +757,7 @@ lock_dealloc_resource (void *res)
     }
 }
 
-static int
+STATIC_INLINE int
 lock_init_resource (void *res)
 {
   LK_RES *res_ptr = (LK_RES *) res;
@@ -741,7 +777,7 @@ lock_init_resource (void *res)
   return NO_ERROR;
 }
 
-static int
+STATIC_INLINE int
 lock_uninit_resource (void *res)
 {
   LK_RES *res_ptr = (LK_RES *) res;
@@ -760,7 +796,7 @@ lock_uninit_resource (void *res)
   return NO_ERROR;
 }
 
-static int
+STATIC_INLINE int
 lock_res_key_copy (void *src, void *dest)
 {
   LK_RES_KEY *src_k = (LK_RES_KEY *) src;
@@ -797,7 +833,7 @@ lock_res_key_copy (void *src, void *dest)
   return NO_ERROR;
 }
 
-static int
+STATIC_INLINE int
 lock_res_key_compare (void *k1, void *k2)
 {
   LK_RES_KEY *k1_k = (LK_RES_KEY *) k1;
@@ -837,7 +873,7 @@ lock_res_key_compare (void *k1, void *k2)
     }
 }
 
-static unsigned int
+STATIC_INLINE unsigned int
 lock_res_key_hash (void *key, int htsize)
 {
   LK_RES_KEY *key_k = (LK_RES_KEY *) key;
@@ -854,7 +890,7 @@ lock_res_key_hash (void *key, int htsize)
 }
 
 /* initialize lock entry as free state */
-static void
+STATIC_INLINE void
 lock_initialize_entry (LK_ENTRY * entry_ptr)
 {
   entry_ptr->tran_index = -1;
@@ -873,7 +909,7 @@ lock_initialize_entry (LK_ENTRY * entry_ptr)
 }
 
 /* initialize lock entry as granted state */
-static void
+STATIC_INLINE void
 lock_initialize_entry_as_granted (LK_ENTRY * entry_ptr, int tran_index, LK_RES * res, LOCK lock)
 {
   entry_ptr->tran_index = tran_index;
@@ -893,7 +929,7 @@ lock_initialize_entry_as_granted (LK_ENTRY * entry_ptr, int tran_index, LK_RES *
 }
 
 /* initialize lock entry as blocked state */
-static void
+STATIC_INLINE void
 lock_initialize_entry_as_blocked (LK_ENTRY * entry_ptr, THREAD_ENTRY * thread_p, int tran_index, LK_RES * res,
 				  LOCK lock)
 {
@@ -914,7 +950,7 @@ lock_initialize_entry_as_blocked (LK_ENTRY * entry_ptr, THREAD_ENTRY * thread_p,
 }
 
 /* initialize lock entry as non2pl state */
-static void
+STATIC_INLINE void
 lock_initialize_entry_as_non2pl (LK_ENTRY * entry_ptr, int tran_index, LK_RES * res, LOCK lock)
 {
   entry_ptr->tran_index = tran_index;
@@ -932,7 +968,7 @@ lock_initialize_entry_as_non2pl (LK_ENTRY * entry_ptr, int tran_index, LK_RES * 
 }
 
 /* initialize lock resource as free state */
-static void
+STATIC_INLINE void
 lock_initialize_resource (LK_RES * res_ptr)
 {
   pthread_mutex_init (&(res_ptr->res_mutex), NULL);
@@ -948,7 +984,7 @@ lock_initialize_resource (LK_RES * res_ptr)
 }
 
 /* initialize lock resource as allocated state */
-static void
+STATIC_INLINE void
 lock_initialize_resource_as_allocated (LK_RES * res_ptr, LOCK lock)
 {
   res_ptr->total_holders_mode = lock;
@@ -965,7 +1001,7 @@ lock_initialize_resource_as_allocated (LK_RES * res_ptr, LOCK lock)
  *
  *   oid(in):
  */
-static unsigned int
+STATIC_INLINE unsigned int
 lock_get_hash_value (const OID * oid, int htsize)
 {
   unsigned int next_base_slotid, addr;
@@ -1011,7 +1047,7 @@ lock_get_hash_value (const OID * oid, int htsize)
  * Note:This function allocates the transaction lock hold table and
  *     initializes the table.
  */
-static int
+STATIC_INLINE int
 lock_initialize_tran_lock_table (void)
 {
   LK_TRAN_LOCK *tran_lock;	/* pointer to transaction hold entry */
@@ -1060,7 +1096,7 @@ lock_initialize_tran_lock_table (void)
  *
  * Note:This function initializes an object lock hash table.
  */
-static int
+STATIC_INLINE int
 lock_initialize_object_hash_table (void)
 {
 #define LK_INITIAL_OBJECT_LOCK_TABLE_SIZE       10000
@@ -1101,7 +1137,7 @@ lock_initialize_object_hash_table (void)
  *        => each block has object lock resource block.
  *     2. a list of freed object lock resource entries.
  */
-static int
+STATIC_INLINE int
 lock_initialize_object_lock_res_list (void)
 {
   int block_size, block_count, ret;
@@ -1131,7 +1167,7 @@ lock_initialize_object_lock_res_list (void)
  *        => each node has object lock entry block.
  *     2. a list of freed object lock entries.
  */
-static int
+STATIC_INLINE int
 lock_initialize_object_lock_entry_list (void)
 {
   int block_count, block_size, ret;
@@ -1157,7 +1193,7 @@ lock_initialize_object_lock_entry_list (void)
  *
  * Note:This function initializes the transaction waif-for graph.
  */
-static int
+STATIC_INLINE int
 lock_initialize_deadlock_detection (void)
 {
   int i;
@@ -1201,7 +1237,7 @@ lock_initialize_deadlock_detection (void)
  *
  * Note:This function removes the given lock resource entry from lock hash table.
  */
-static int
+STATIC_INLINE int
 lock_remove_resource (THREAD_ENTRY * thread_p, LK_RES * res_ptr)
 {
   LF_TRAN_ENTRY *t_entry = thread_get_tran_entry (thread_p, THREAD_TS_OBJ_LOCK_RES);
@@ -1245,7 +1281,7 @@ lock_remove_resource (THREAD_ENTRY * thread_p, LK_RES * res_ptr)
  *     hold list. The given lock entry was included in the lock holder
  *     list. That is, The lock is held by the transaction.
  */
-static void
+STATIC_INLINE void
 lock_insert_into_tran_hold_list (LK_ENTRY * entry_ptr, int owner_tran_index)
 {
   LK_TRAN_LOCK *tran_lock;
@@ -1353,7 +1389,7 @@ lock_insert_into_tran_hold_list (LK_ENTRY * entry_ptr, int owner_tran_index)
  * Note:This functions finds the given lock entry in the transaction
  *     lock hold list and then deletes it from the lock hold list.
  */
-static int
+STATIC_INLINE int
 lock_delete_from_tran_hold_list (LK_ENTRY * entry_ptr, int owner_tran_index)
 {
   LK_TRAN_LOCK *tran_lock;
@@ -1460,7 +1496,7 @@ lock_delete_from_tran_hold_list (LK_ENTRY * entry_ptr, int owner_tran_index)
  * Note:This function inserts the given lock entry into the transaction
  *     non2pl list.
  */
-static void
+STATIC_INLINE void
 lock_insert_into_tran_non2pl_list (LK_ENTRY * non2pl, int owner_tran_index)
 {
   LK_TRAN_LOCK *tran_lock;
@@ -1500,7 +1536,7 @@ lock_insert_into_tran_non2pl_list (LK_ENTRY * non2pl, int owner_tran_index)
  * Note:This function finds the given lock entry in the transaction
  *     non2pl list and then deletes it from the non2pl list.
  */
-static int
+STATIC_INLINE int
 lock_delete_from_tran_non2pl_list (LK_ENTRY * non2pl, int owner_tran_index)
 {
   LK_TRAN_LOCK *tran_lock;
@@ -1578,7 +1614,7 @@ lock_delete_from_tran_non2pl_list (LK_ENTRY * non2pl, int owner_tran_index)
  * Note:This function finds a class lock entry, whose lock object id
  *     is the given class_oid, in the transaction lock hold list.
  */
-static LK_ENTRY *
+STATIC_INLINE LK_ENTRY *
 lock_find_class_entry (int tran_index, const OID * class_oid)
 {
   LK_TRAN_LOCK *tran_lock;
@@ -1629,7 +1665,7 @@ lock_find_class_entry (int tran_index, const OID * class_oid)
  *     of non two phase lock to detect future serializable inconsistencies
  *
  */
-static LK_ENTRY *
+STATIC_INLINE LK_ENTRY *
 lock_add_non2pl_lock (THREAD_ENTRY * thread_p, LK_RES * res_ptr, int tran_index, LOCK lock)
 {
   LF_TRAN_ENTRY *t_entry = thread_get_tran_entry (thread_p, THREAD_TS_OBJ_LOCK_ENT);
@@ -1726,7 +1762,7 @@ lock_add_non2pl_lock (THREAD_ENTRY * thread_p, LK_RES * res_ptr, int tran_index,
  *     NOTE that the granted_mode and blocked_mode of the given lock
  *          entry must be set before this function is called.
  */
-static void
+STATIC_INLINE void
 lock_position_holder_entry (LK_RES * res_ptr, LK_ENTRY * entry_ptr)
 {
   LK_ENTRY *prev, *i;
@@ -1848,7 +1884,7 @@ lock_position_holder_entry (LK_RES * res_ptr, LK_ENTRY * entry_ptr)
  *
  * Note:Set error code for lock timeout
  */
-static void
+STATIC_INLINE void
 lock_set_error_for_timeout (THREAD_ENTRY * thread_p, LK_ENTRY * entry_ptr)
 {
   char *client_prog_name;	/* Client program name for transaction */
@@ -2100,7 +2136,7 @@ set_error:
  *   tran_index(in):
  *   abort_reason(in):
  */
-static void
+STATIC_INLINE void
 lock_set_tran_abort_reason (int tran_index, TRAN_ABORT_REASON abort_reason)
 {
   LOG_TDES *tdes;
@@ -2120,7 +2156,7 @@ lock_set_tran_abort_reason (int tran_index, TRAN_ABORT_REASON abort_reason)
  *
  * Note:set error code for unilaterally aborted deadlock victim
  */
-static void
+STATIC_INLINE void
 lock_set_error_for_aborted (LK_ENTRY * entry_ptr)
 {
   char *client_prog_name;	/* Client user name for transaction */
@@ -2145,7 +2181,7 @@ lock_set_error_for_aborted (LK_ENTRY * entry_ptr)
  *   entry_ptr(in): lock entry for lock waiting
  *   wait_msecs(in): lock wait milliseconds
  */
-static LOCK_WAIT_STATE
+STATIC_INLINE LOCK_WAIT_STATE
 lock_suspend (THREAD_ENTRY * thread_p, LK_ENTRY * entry_ptr, int wait_msecs)
 {
   THREAD_ENTRY *p;
@@ -2332,7 +2368,7 @@ lock_suspend (THREAD_ENTRY * thread_p, LK_ENTRY * entry_ptr, int wait_msecs)
  *   entry_ptr(in):
  *   state(in): resume state
  */
-static void
+STATIC_INLINE void
 lock_resume (LK_ENTRY * entry_ptr, int state)
 {
   /* The caller is holding the thread entry mutex */
@@ -2380,7 +2416,7 @@ lock_resume (LK_ENTRY * entry_ptr, int state)
  *     deadlock detection. The deadlock victim is waked up and noitified of
  *     timeout by this function if the deadlock victim is still suspended.
  */
-static bool
+STATIC_INLINE bool
 lock_wakeup_deadlock_victim_timeout (int tran_index)
 {
   tran_lock_waiters_array_type tran_lock_waiters;
@@ -2436,7 +2472,7 @@ lock_wakeup_deadlock_victim_timeout (int tran_index)
  *     deadlock detection. The deadlock victim is waked up and noitified of
  *     abortion by this function if the deadlock victim is still suspended.
  */
-static bool
+STATIC_INLINE bool
 lock_wakeup_deadlock_victim_aborted (int tran_index)
 {
   tran_lock_waiters_array_type tran_lock_waiters;
@@ -2506,7 +2542,7 @@ lock_wakeup_deadlock_victim_aborted (int tran_index)
  *   res_ptr(in): This function grants blocked holders whose blocked lock mode is
  *     compatible with all the granted lock mode of non-blocked holders.
  */
-static void
+STATIC_INLINE void
 lock_grant_blocked_holder (THREAD_ENTRY * thread_p, LK_RES * res_ptr)
 {
   LK_ENTRY *prev_holder;
@@ -2625,7 +2661,7 @@ lock_grant_blocked_holder (THREAD_ENTRY * thread_p, LK_RES * res_ptr)
  *   res_ptr(in): This function grants blocked waiters whose blocked lock mode is
  *     compatible with the total mode of lock holders.
  */
-static int
+STATIC_INLINE int
 lock_grant_blocked_waiter (THREAD_ENTRY * thread_p, LK_RES * res_ptr)
 {
   LK_ENTRY *prev_waiter;
@@ -2757,7 +2793,7 @@ lock_grant_blocked_waiter (THREAD_ENTRY * thread_p, LK_RES * res_ptr)
  *     all the blocked mode of the previous lock waiters and the total mode
  *     of lock holders.
  */
-static void
+STATIC_INLINE void
 lock_grant_blocked_waiter_partial (THREAD_ENTRY * thread_p, LK_RES * res_ptr, LK_ENTRY * from_whom)
 {
   LK_ENTRY *prev_check;
@@ -2913,7 +2949,7 @@ lock_grant_blocked_waiter_partial (THREAD_ENTRY * thread_p, LK_RES * res_ptr, LK
  *   tran_lock(in):
  *
  */
-static bool
+STATIC_INLINE bool
 lock_check_escalate (THREAD_ENTRY * thread_p, LK_ENTRY * class_entry, LK_TRAN_LOCK * tran_lock)
 {
   LK_ENTRY *superclass_entry = NULL;
@@ -2969,7 +3005,7 @@ lock_check_escalate (THREAD_ENTRY * thread_p, LK_ENTRY * class_entry, LK_TRAN_LO
  *     this function converts instance lock(s) to a class lock and
  *     releases unnecessary instance locks.
  */
-static int
+int
 lock_escalate_if_needed (THREAD_ENTRY * thread_p, LK_ENTRY * class_entry, int tran_index)
 {
   LK_TRAN_LOCK *tran_lock;
@@ -3082,7 +3118,7 @@ lock_escalate_if_needed (THREAD_ENTRY * thread_p, LK_ENTRY * class_entry, int tr
  *
  * Note:hold a lock on the given object with instant duration.
  */
-static int
+STATIC_INLINE int
 lock_internal_hold_lock_object_instant (THREAD_ENTRY * thread_p, int tran_index, const OID * oid, const OID * class_oid,
 					LOCK lock)
 {
@@ -3231,7 +3267,7 @@ lock_internal_hold_lock_object_instant (THREAD_ENTRY * thread_p, int tran_index,
  *     by other transaction, then return LK_NOTGRANTED;
  *     else this transaction is suspended until it can acquire the lock.
  */
-static int
+STATIC_INLINE int
 lock_internal_perform_lock_object (THREAD_ENTRY * thread_p, int tran_index, const OID * oid, const OID * class_oid,
 				   LOCK lock, int wait_msecs, LK_ENTRY ** entry_addr_ptr, LK_ENTRY * class_entry)
 {
@@ -3964,7 +4000,7 @@ end:
  *     if release_flag is true, release the lock item.
  *     Otherwise, just decrement the lock count for supporting isolation level.
  */
-static void
+STATIC_INLINE void
 lock_internal_perform_unlock_object (THREAD_ENTRY * thread_p, int tran_index, LK_ENTRY * entry_ptr, bool release_flag,
 				     bool move_to_non2pl)
 {
@@ -4213,7 +4249,7 @@ lock_demote_class_lock (THREAD_ENTRY * thread_p, const OID * oid, LOCK lock, LOC
  *   ex_lock(out): ex-lock mode
  *
  */
-static int
+STATIC_INLINE int
 lock_internal_demote_class_lock (THREAD_ENTRY * thread_p, LK_ENTRY * entry_ptr, LOCK to_be_lock, LOCK * ex_lock)
 {
   LK_RES *res_ptr;		/* lock resource entry pointer */
@@ -4350,7 +4386,7 @@ lock_demote_read_class_lock_for_checksumdb (THREAD_ENTRY * thread_p, int tran_in
  * Note:This function demotes all shared class locks that are held
  *     by the given transaction.
  */
-static void
+STATIC_INLINE void
 lock_demote_all_shared_class_locks (THREAD_ENTRY * thread_p, int tran_index)
 {
   LK_TRAN_LOCK *tran_lock;
@@ -4417,7 +4453,7 @@ lock_demote_all_shared_class_locks (THREAD_ENTRY * thread_p, int tran_index)
  *     with the given inst_oid in the transaction lock hold list. And then,
  *     unlock the instance lock if the instance lock is shared lock.
  */
-static void
+STATIC_INLINE void
 lock_unlock_shared_inst_lock (THREAD_ENTRY * thread_p, int tran_index, const OID * inst_oid)
 {
   LK_ENTRY *entry_ptr;
@@ -4443,7 +4479,7 @@ lock_unlock_shared_inst_lock (THREAD_ENTRY * thread_p, int tran_index, const OID
  *
  * Note:This function removes class locks whose lock mode is lower than the given lock mode.
  */
-static void
+STATIC_INLINE void
 lock_remove_all_class_locks (THREAD_ENTRY * thread_p, int tran_index, LOCK lock)
 {
   LK_TRAN_LOCK *tran_lock;
@@ -4540,7 +4576,7 @@ lock_remove_all_inst_locks (THREAD_ENTRY * thread_p, int tran_index, const OID *
  *   non2pl(in):
  *   tran_index(in):
  */
-static void
+STATIC_INLINE void
 lock_remove_non2pl (THREAD_ENTRY * thread_p, LK_ENTRY * non2pl, int tran_index)
 {
   LF_TRAN_ENTRY *t_entry = thread_get_tran_entry (thread_p, THREAD_TS_OBJ_LOCK_ENT);
@@ -4608,7 +4644,7 @@ lock_remove_non2pl (THREAD_ENTRY * thread_p, LK_ENTRY * non2pl, int tran_index)
  *   tran_index(in):
  *   lock(in):
  */
-static void
+STATIC_INLINE void
 lock_update_non2pl_list (THREAD_ENTRY * thread_p, LK_RES * res_ptr, int tran_index, LOCK lock)
 {
   LF_TRAN_ENTRY *t_entry = thread_get_tran_entry (thread_p, THREAD_TS_OBJ_LOCK_ENT);
@@ -4689,7 +4725,7 @@ lock_update_non2pl_list (THREAD_ENTRY * thread_p, LK_RES * res_ptr, int tran_ind
  * Note:add an edge to WFG which represents that
  *     'from_tran_index' transaction waits for 'to_tran_index' transaction.
  */
-static int
+STATIC_INLINE int
 lock_add_WFG_edge (int from_tran_index, int to_tran_index, int holder_flag, INT64 edge_wait_stime)
 {
   int prev, curr;
@@ -4822,7 +4858,7 @@ lock_add_WFG_edge (int from_tran_index, int to_tran_index, int holder_flag, INT6
  *
  * Note:
  */
-static void
+STATIC_INLINE void
 lock_select_deadlock_victim (THREAD_ENTRY * thread_p, int s, int t)
 {
   LK_WFG_NODE *TWFG_node;
@@ -5211,7 +5247,7 @@ lock_select_deadlock_victim (THREAD_ENTRY * thread_p, int s, int t)
  *
  * return:
  */
-static void
+STATIC_INLINE void
 lock_dump_deadlock_victims (THREAD_ENTRY * thread_p, FILE * outfile)
 {
   int k, count;
@@ -5276,7 +5312,7 @@ lock_dump_deadlock_victims (THREAD_ENTRY * thread_p, FILE * outfile)
  *
  * Note:compare two OID of lockable objects.
  */
-static int
+STATIC_INLINE int
 lock_compare_lock_info (const void *lockinfo1, const void *lockinfo2)
 {
   const OID *oid1;
@@ -5297,7 +5333,7 @@ lock_compare_lock_info (const void *lockinfo1, const void *lockinfo2)
  *
  *   msecs(in): milliseconds
  */
-static float
+STATIC_INLINE float
 lock_wait_msecs_to_secs (int msecs)
 {
   if (msecs > 0)
@@ -5320,7 +5356,7 @@ lock_wait_msecs_to_secs (int msecs)
  *
  * Note:Dump contents of the lock resource entry pointed by res_ptr.
  */
-static void
+STATIC_INLINE void
 lock_dump_resource (THREAD_ENTRY * thread_p, FILE * outfp, LK_RES * res_ptr)
 {
 #define TEMP_BUFFER_SIZE  128
@@ -5622,7 +5658,7 @@ lock_dump_resource (THREAD_ENTRY * thread_p, FILE * outfp, LK_RES * res_ptr)
  *     waiting on at least one transaction holding a lock, otherwise,
  *     an inconsistent entry exist. Some waiters may be waiting on waiters.
  */
-static bool
+STATIC_INLINE bool
 lock_check_consistent_resource (THREAD_ENTRY * thread_p, LK_RES * res_ptr)
 {
   LOCK total_mode;
@@ -5810,7 +5846,7 @@ inconsistent:
  *
  * Note:check if the given transaction lock information enrtry is consistent.
  */
-static bool
+STATIC_INLINE bool
 lock_check_consistent_tran_lock (LK_TRAN_LOCK * tran_lock)
 {
   int count;
@@ -5970,7 +6006,7 @@ error:
 // stop_mapper (out)   : ignored
 // suspend_count (out) : count suspended threads
 //
-static void
+STATIC_INLINE void
 lock_check_timeout_expired_and_count_suspended_mapfunc (THREAD_ENTRY & thread_ref, bool & stop_mapper,
                                                         size_t & suspend_count)
 {
@@ -6838,7 +6874,7 @@ error:
 #endif /* !SERVER_MODE */
 }
 
-static void
+STATIC_INLINE void
 lock_unlock_object_lock_internal (THREAD_ENTRY * thread_p, const OID * oid, const OID * class_oid, LOCK lock,
 				  int release_flag, int move_to_non2pl)
 {
@@ -7225,7 +7261,7 @@ lock_unlock_all (THREAD_ENTRY * thread_p, bool aborted)
 #endif /* !SERVER_MODE */
 }
 
-static LK_ENTRY *
+STATIC_INLINE LK_ENTRY *
 lock_find_tran_hold_entry (THREAD_ENTRY * thread_p, int tran_index, const OID * oid, bool is_class)
 {
 #if !defined (SERVER_MODE)
@@ -7718,7 +7754,7 @@ lock_force_thread_timeout_lock (THREAD_ENTRY * thrd)
  *     the thread is timed-out.
  *     If NULL is given, it applies to all threads.
  */
-static bool
+STATIC_INLINE bool
 lock_force_timeout_expired_wait_transactions (void *thrd_entry)
 {
 #if !defined (SERVER_MODE)
@@ -7897,7 +7933,7 @@ end:
  *
  * Note:check if the local deadlock detection should be performed.
  */
-static bool
+STATIC_INLINE bool
 lock_is_local_deadlock_detection_interval_up (void)
 {
 #if defined (SERVER_MODE)
@@ -7929,7 +7965,7 @@ lock_is_local_deadlock_detection_interval_up (void)
 // thread_ref (in)  : current thread
 // stop_mapper (in) : output to stop mapper when a thread was victimized
 //
-static void
+STATIC_INLINE void
 lock_victimize_first_thread_mapfunc (THREAD_ENTRY & thread_ref, bool & stop_mapper)
 {
 #if defined (SERVER_MODE)
@@ -9170,7 +9206,7 @@ lock_abort_composite_lock (LK_COMPOSITE_LOCK * comp_lock)
  *   class_lock(in): class lock
  *   lock_escalation(in): lock escalation
  */
-static bool
+STATIC_INLINE bool
 lock_is_class_lock_escalated (LOCK class_lock, LOCK lock_escalation)
 {
 #if !defined (SERVER_MODE)
@@ -9386,7 +9422,7 @@ lock_is_instant_lock_mode (int tran_index)
  * class_entry (in/out)	     : class entry
  *
  */
-static void
+STATIC_INLINE void
 lock_increment_class_granules (LK_ENTRY * class_entry)
 {
   if (class_entry == NULL || class_entry->res_head->key.type != LOCK_RESOURCE_CLASS)
@@ -9408,7 +9444,7 @@ lock_increment_class_granules (LK_ENTRY * class_entry)
  * class_entry (in/out)	     : class entry
  *
  */
-static void
+STATIC_INLINE void
 lock_decrement_class_granules (LK_ENTRY * class_entry)
 {
   if (class_entry == NULL || class_entry->res_head->key.type != LOCK_RESOURCE_CLASS)
@@ -9632,7 +9668,7 @@ lock_wait_state_to_string (int state)
  *
  *   note: for deadlock
  */
-static void
+STATIC_INLINE void
 lock_event_log_tran_locks (THREAD_ENTRY * thread_p, FILE * log_fp, int tran_index)
 {
   int rv, i, indent = 2;
@@ -9698,7 +9734,7 @@ lock_event_log_tran_locks (THREAD_ENTRY * thread_p, FILE * log_fp, int tran_inde
  *
  *   note: for lock timeout
  */
-static void
+STATIC_INLINE void
 lock_event_log_blocked_lock (THREAD_ENTRY * thread_p, FILE * log_fp, LK_ENTRY * entry)
 {
   int indent = 2;
@@ -9730,7 +9766,7 @@ lock_event_log_blocked_lock (THREAD_ENTRY * thread_p, FILE * log_fp, LK_ENTRY * 
  *
  *   note: for lock timeout
  */
-static void
+STATIC_INLINE void
 lock_event_log_blocking_locks (THREAD_ENTRY * thread_p, FILE * log_fp, LK_ENTRY * wait_entry)
 {
   LK_ENTRY *entry;
@@ -9814,7 +9850,7 @@ lock_event_log_blocking_locks (THREAD_ENTRY * thread_p, FILE * log_fp, LK_ENTRY 
  *   log_fp(in):
  *   entry(in):
  */
-static void
+STATIC_INLINE void
 lock_event_log_lock_info (THREAD_ENTRY * thread_p, FILE * log_fp, LK_ENTRY * entry)
 {
   LK_RES *res_ptr;
@@ -9905,7 +9941,7 @@ lock_event_log_lock_info (THREAD_ENTRY * thread_p, FILE * log_fp, LK_ENTRY * ent
  *   return:
  *   entry(in):
  */
-static void
+STATIC_INLINE void
 lock_event_set_tran_wait_entry (int tran_index, LK_ENTRY * entry)
 {
   LK_TRAN_LOCK *tran_lock;
@@ -9929,7 +9965,7 @@ lock_event_set_tran_wait_entry (int tran_index, LK_ENTRY * entry)
  *   return:
  *   entry(in):
  */
-static void
+STATIC_INLINE void
 lock_event_set_xasl_id_to_entry (int tran_index, LK_ENTRY * entry)
 {
   LOG_TDES *tdes;
@@ -10002,7 +10038,7 @@ lock_rep_read_tran (THREAD_ENTRY * thread_p, LOCK lock, int cond_flag)
 }
 
 #if defined (SERVER_MODE)
-static bool
+STATIC_INLINE bool
 lock_is_safe_lock_with_page (THREAD_ENTRY * thread_p, LK_ENTRY * entry_ptr)
 {
   LK_RES *lock_res;
@@ -10036,7 +10072,7 @@ lock_is_safe_lock_with_page (THREAD_ENTRY * thread_p, LK_ENTRY * entry_ptr)
  * tran_entry (in) : Lock-free transaction entry.
  * freelist (in)   : Lock-free shared list of entries.
  */
-static LK_ENTRY *
+STATIC_INLINE LK_ENTRY *
 lock_get_new_entry (int tran_index, LF_TRAN_ENTRY * tran_entry, LF_FREELIST * freelist)
 {
   LK_TRAN_LOCK *tran_lock = &lk_Gl.tran_lock_table[tran_index];
@@ -10067,7 +10103,7 @@ lock_get_new_entry (int tran_index, LF_TRAN_ENTRY * tran_entry, LF_FREELIST * fr
  * freelist (in)   : Lock-free shared list of lock entries.
  * lock_entry (in) : Lock entry being freed.
  */
-static void
+STATIC_INLINE void
 lock_free_entry (int tran_index, LF_TRAN_ENTRY * tran_entry, LF_FREELIST * freelist, LK_ENTRY * lock_entry)
 {
   LK_TRAN_LOCK *tran_lock = &lk_Gl.tran_lock_table[tran_index];
@@ -10099,7 +10135,7 @@ lock_free_entry (int tran_index, LF_TRAN_ENTRY * tran_entry, LF_FREELIST * freel
  * class_oid(in): class oid.
  * oid(in): instance oid.
  */
-static void
+STATIC_INLINE void
 lock_unlock_object_by_isolation (THREAD_ENTRY * thread_p, int tran_index, TRAN_ISOLATION isolation,
 				 const OID * class_oid, const OID * oid)
 {
@@ -10137,7 +10173,7 @@ lock_unlock_object_by_isolation (THREAD_ENTRY * thread_p, int tran_index, TRAN_I
  * tran_index(in): Transaction index.
  * class_oid(in): class oid.
  */
-static void
+STATIC_INLINE void
 lock_unlock_inst_locks_of_class_by_isolation (THREAD_ENTRY * thread_p, int tran_index, TRAN_ISOLATION isolation,
 					      const OID * class_oid)
 {
@@ -10170,7 +10206,7 @@ lock_unlock_inst_locks_of_class_by_isolation (THREAD_ENTRY * thread_p, int tran_
 // tran_lock_waiters (out) : output lock waiter threads belonging to transaction
 // count (out)             : output thread count
 //
-static void
+STATIC_INLINE void
 lock_get_transaction_lock_waiting_threads_mapfunc (THREAD_ENTRY & thread_ref, bool & stop_mapper, int tran_index,
 						   tran_lock_waiters_array_type & tran_lock_waiters, size_t & count)
 {
@@ -10196,7 +10232,7 @@ lock_get_transaction_lock_waiting_threads_mapfunc (THREAD_ENTRY & thread_ref, bo
 // tran_lock_waiters (out) : output lock waiter threads belonging to transaction
 // count (out)             : output thread count
 //
-static void
+STATIC_INLINE void
 lock_get_transaction_lock_waiting_threads (int tran_index, tran_lock_waiters_array_type & tran_lock_waiters,
 					   size_t & count)
 {
