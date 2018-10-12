@@ -5027,6 +5027,10 @@ null_list:
 	      end_query_allowed = false;
 	    }
 	}
+      else
+	{
+	  tdes->query_exec_ctx = &query_exec_ctx;
+	}
 
       stran_server_auto_commit_or_abort (thread_p, rid, p_net_Deferred_end_queries, n_query_ids,
 					 tran_abort, has_updated, &end_query_allowed, &tran_state, &should_conn_reset);
@@ -5072,10 +5076,14 @@ null_list:
 
 exit:
   /* Clear postponed XASL - TODO be sure that query cache can't be deleted */
-  xqmgr_clear_query_ctx (thread_p, &query_exec_ctx);
+  if (tdes->query_exec_ctx != NULL)
+    {
+      assert (tdes->query_exec_ctx == &query_exec_ctx);
+      xqmgr_clear_query_ctx (thread_p, &query_exec_ctx);
+    }
+
   heap_unfix_last_classrep_entry (thread_p);
   heap_disable_fixing_last_classrep_entry (thread_p);
-
 
   if (p_net_Deferred_end_queries != net_Deferred_end_queries)
     {

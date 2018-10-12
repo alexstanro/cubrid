@@ -1772,6 +1772,7 @@ struct log_tdes
 
   void *fixed_classrep_entry;
   bool enable_fix_classrep_entry;
+  void *query_exec_ctx;
 };
 
 typedef struct log_addr_tdesarea LOG_ADDR_TDESAREA;

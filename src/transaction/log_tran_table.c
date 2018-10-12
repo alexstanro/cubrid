@@ -946,6 +946,7 @@ logtb_set_tdes (THREAD_ENTRY * thread_p, LOG_TDES * tdes, const BOOT_CLIENT_CRED
   RB_INIT (&tdes->lob_locator_root);
   tdes->fixed_classrep_entry = NULL;
   tdes->enable_fix_classrep_entry = false;
+  tdes->query_exec_ctx = NULL;
 }
 
 /*
@@ -2039,6 +2040,7 @@ logtb_initialize_tdes (LOG_TDES * tdes, int tran_index)
 
   tdes->fixed_classrep_entry = NULL;
   tdes->enable_fix_classrep_entry = false;
+  tdes->query_exec_ctx = NULL;
 }
 
 /*
