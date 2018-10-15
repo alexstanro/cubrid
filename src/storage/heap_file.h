@@ -651,4 +651,8 @@ extern void heap_unfix_last_classrep_entry (THREAD_ENTRY * thread_p);
 extern bool heap_fix_last_classrep_entry (THREAD_ENTRY * thread_p, void *classrep_entry);
 extern void heap_enable_fixing_last_classrep_entry (THREAD_ENTRY * thread_p);
 extern void heap_disable_fixing_last_classrep_entry (THREAD_ENTRY * thread_p);
+extern void heap_postpone_clear_tdes (THREAD_ENTRY * thread_p);
+extern void heap_do_postpone_clear_tdes (THREAD_ENTRY * thread_p);
+extern bool heap_needs_wait_for_clear (THREAD_ENTRY * thread_p);
+
 #endif /* _HEAP_FILE_H_ */

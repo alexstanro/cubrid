@@ -24900,3 +24900,38 @@ heap_disable_fixing_last_classrep_entry (THREAD_ENTRY * thread_p)
       tdes->enable_fix_classrep_entry = false;
     }
 }
+
+/* TODO - only one clear function */
+void
+heap_postpone_clear_tdes (THREAD_ENTRY * thread_p)
+{
+  LOG_TDES *tdes = LOG_FIND_CURRENT_TDES (thread_p);
+  if (tdes != NULL)
+    {
+      tdes->postpone_clear_tdes = true;
+    }
+}
+
+void
+heap_do_postpone_clear_tdes (THREAD_ENTRY * thread_p)
+{
+  LOG_TDES *tdes = LOG_FIND_CURRENT_TDES (thread_p);
+  if (tdes != NULL)
+    {
+      tdes->postpone_clear_tdes = false;
+      logtb_clear_tdes (thread_p, tdes);
+    }
+}
+
+/* TODO - move to log  */
+bool
+heap_needs_wait_for_clear (THREAD_ENTRY * thread_p)
+{
+  LOG_TDES *tdes = LOG_FIND_CURRENT_TDES (thread_p);
+  if (tdes != NULL)
+    {
+      return tdes->wait_for_clear;
+    }
+
+  return false;
+}

@@ -4782,6 +4782,7 @@ sqmgr_execute_query (THREAD_ENTRY * thread_p, unsigned int rid, char *request, i
 
   CACHE_TIME_RESET (&srv_cache_time);
   heap_enable_fixing_last_classrep_entry (thread_p);
+  heap_postpone_clear_tdes (thread_p);
   XQMGR_INIT_QUERY_CTX (&query_exec_ctx, NULL, &xclone);
 
   /* call the server routine of query execute */
@@ -4843,6 +4844,7 @@ null_list:
 	       * that transaction, during class deletion. */
 	      has_xasl_entry = true;
 	      xqmgr_clear_query_ctx (thread_p, &query_exec_ctx);
+	      heap_postpone_clear_tdes (thread_p);
 	      xasl_cache_entry_p = NULL;
 	      heap_unfix_last_classrep_entry (thread_p);
 
@@ -5061,6 +5063,7 @@ null_list:
   memset (ptr, 0, OR_ALIGNED_BUF_SIZE (a_reply) - (ptr - reply));
 #endif
 
+  tdes->wait_for_clear = true;
   css_send_reply_and_3_data_to_client (thread_p->conn_entry, rid, reply, OR_ALIGNED_BUF_SIZE (a_reply), replydata,
 				       replydata_size, page_ptr, page_size, queryinfo_string, queryinfo_string_length);
 
@@ -5084,6 +5087,8 @@ exit:
 
   heap_unfix_last_classrep_entry (thread_p);
   heap_disable_fixing_last_classrep_entry (thread_p);
+  heap_do_postpone_clear_tdes (thread_p);
+  tdes->wait_for_clear = false;
 
   if (p_net_Deferred_end_queries != net_Deferred_end_queries)
     {

@@ -946,7 +946,10 @@ logtb_set_tdes (THREAD_ENTRY * thread_p, LOG_TDES * tdes, const BOOT_CLIENT_CRED
   RB_INIT (&tdes->lob_locator_root);
   tdes->fixed_classrep_entry = NULL;
   tdes->enable_fix_classrep_entry = false;
+  tdes->postpone_clear_tdes = false;
   tdes->query_exec_ctx = NULL;
+  tdes->postpone_clear_tdes = false;
+  tdes->wait_for_clear = false;
 }
 
 /*
@@ -1840,6 +1843,12 @@ logtb_clear_tdes (THREAD_ENTRY * thread_p, LOG_TDES * tdes)
   DB_VALUE *dbval;
   HL_HEAPID save_heap_id;
 
+  if (tdes->postpone_clear_tdes)
+    {
+      /* Not yet */
+      return;
+    }
+
   tdes->isloose_end = false;
   tdes->state = TRAN_ACTIVE;
   LSA_SET_NULL (&tdes->head_lsa);
@@ -2040,6 +2049,7 @@ logtb_initialize_tdes (LOG_TDES * tdes, int tran_index)
 
   tdes->fixed_classrep_entry = NULL;
   tdes->enable_fix_classrep_entry = false;
+  tdes->postpone_clear_tdes = false;
   tdes->query_exec_ctx = NULL;
 }
 

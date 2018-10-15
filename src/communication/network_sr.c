@@ -928,6 +928,14 @@ net_server_request (THREAD_ENTRY * thread_p, unsigned int rid, int request, int 
   int error_code;
   CSS_CONN_ENTRY *conn;
 
+start:
+  if (heap_needs_wait_for_clear (thread_p))
+    {
+      /* Wait for other thread cleaning tdes. */
+      thread_sleep (20);
+      goto start;
+    }
+
   if (buffer == NULL && size > 0)
     {
       er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_NET_CANT_ALLOC_BUFFER, 0);
