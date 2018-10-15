@@ -5572,6 +5572,8 @@ log_commit_local (THREAD_ENTRY * thread_p, LOG_TDES * tdes, bool retain_lock, bo
 	      lock_unlock_all (thread_p, false);
 	    }
 
+	  /* TODO - for sync only */
+	  log_wakeup_log_flush_daemon ();
 	  if (tdes->query_exec_ctx != NULL)
 	    {
 #if defined (SERVER_MODE)
@@ -5579,6 +5581,7 @@ log_commit_local (THREAD_ENTRY * thread_p, LOG_TDES * tdes, bool retain_lock, bo
 	      tdes->query_exec_ctx = NULL;
 #endif
 	    }
+
 	  heap_unfix_last_classrep_entry (thread_p);
 	  heap_disable_fixing_last_classrep_entry (thread_p);
 
@@ -10386,7 +10389,7 @@ log_wakeup_checkpoint_daemon ()
 void
 log_wakeup_log_flush_daemon ()
 {
-  if (log_is_log_flush_daemon_available ())
+  if (log_is_log_flush_daemon_available () && log_Flush_has_been_requested == false)
     {
 #if defined (SERVER_MODE)
       log_Flush_has_been_requested = true;
