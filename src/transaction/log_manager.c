@@ -5572,19 +5572,6 @@ log_commit_local (THREAD_ENTRY * thread_p, LOG_TDES * tdes, bool retain_lock, bo
 	      lock_unlock_all (thread_p, false);
 	    }
 
-	  /* TODO - for sync only */
-	  log_wakeup_log_flush_daemon ();
-	  if (tdes->query_exec_ctx != NULL)
-	    {
-#if defined (SERVER_MODE)
-	      xqmgr_clear_query_ctx (thread_p, (XQMGR_EXECUTE_QUERY_CTX *) tdes->query_exec_ctx);
-	      tdes->query_exec_ctx = NULL;
-#endif
-	    }
-
-	  heap_unfix_last_classrep_entry (thread_p);
-	  heap_disable_fixing_last_classrep_entry (thread_p);
-
 	  /* Flush commit log and change the transaction state. */
 	  log_change_tran_as_completed (thread_p, tdes, LOG_COMMIT, &commit_lsa);
 	}
