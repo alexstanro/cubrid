@@ -10392,11 +10392,8 @@ log_wakeup_log_flush_daemon ()
   if (log_is_log_flush_daemon_available ())
     {
 #if defined (SERVER_MODE)
-      if (log_Flush_has_been_requested == false)
-	{
-	  log_Flush_has_been_requested = true;
-	  log_Flush_daemon->wakeup ();
-	}
+      log_Flush_has_been_requested = true;
+      log_Flush_daemon->wakeup ();
 #endif /* SERVER_MODE */
     }
 }

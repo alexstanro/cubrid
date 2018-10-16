@@ -4843,12 +4843,15 @@ null_list:
 	       * may be aborted. Otherwise, another transaction may be resumed and xasl_cache_entry_p may be removed by
 	       * that transaction, during class deletion. */
 	      has_xasl_entry = true;
-	      xqmgr_clear_query_ctx (thread_p, &query_exec_ctx);
-	      heap_postpone_clear_tdes (thread_p);
+	      if (tdes->query_exec_ctx != NULL)
+		{
+		  xqmgr_clear_query_ctx (thread_p, &query_exec_ctx);
+		}
 	      xasl_cache_entry_p = NULL;
 	      heap_unfix_last_classrep_entry (thread_p);
-
 	      heap_disable_fixing_last_classrep_entry (thread_p);
+
+	      heap_do_postpone_clear_tdes (thread_p);
 	    }
 	}
 
@@ -5079,16 +5082,19 @@ null_list:
 
 exit:
   /* Clear postponed XASL - TODO be sure that query cache can't be deleted */
-  if (tdes->query_exec_ctx != NULL)
+  if (tdes->wait_for_clear == true)
     {
-      assert (tdes->query_exec_ctx == &query_exec_ctx);
-      xqmgr_clear_query_ctx (thread_p, &query_exec_ctx);
-    }
+      if (tdes->query_exec_ctx != NULL)
+	{
+	  assert (tdes->query_exec_ctx == &query_exec_ctx);
+	  xqmgr_clear_query_ctx (thread_p, &query_exec_ctx);
+	}
 
-  heap_unfix_last_classrep_entry (thread_p);
-  heap_disable_fixing_last_classrep_entry (thread_p);
-  heap_do_postpone_clear_tdes (thread_p);
-  tdes->wait_for_clear = false;
+      heap_unfix_last_classrep_entry (thread_p);
+      heap_disable_fixing_last_classrep_entry (thread_p);
+      heap_do_postpone_clear_tdes (thread_p);
+      tdes->wait_for_clear = false;
+    }
 
   if (p_net_Deferred_end_queries != net_Deferred_end_queries)
     {
