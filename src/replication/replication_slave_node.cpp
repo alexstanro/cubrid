@@ -25,11 +25,10 @@
 
 #include "replication_slave_node.hpp"
 #include "communication_server_channel.hpp"
-#include "log_impl.h"
 #include "log_applier.h"
-#include "log_manager.h"
 #include "log_consumer.hpp"
 #include "log_impl.h"
+#include "log_manager.h"
 #include "multi_thread_stream.hpp"
 #include "replication_common.hpp"
 #include "replication_stream_entry.hpp"
@@ -40,9 +39,7 @@
 #include "thread_entry.hpp"
 #include "thread_looper.hpp"
 #include "thread_manager.hpp"
-
 #include "transaction_slave_group_complete_manager.hpp"
-
 
 namespace cubreplication
 {
@@ -237,9 +234,10 @@ namespace cubreplication
       }
 
     std::string ctrl_sender_daemon_name = "slave_control_sender_" + control_chn.get_channel_id ();
+    /* Slave control sender is responsible for sending acks through slave_control_channel */
     /* TODO[replication] : last position to be retrieved from recovery module */
-    cubreplication::slave_control_sender *ctrl_sender = new slave_control_sender (std::move (
-		cubreplication::slave_control_channel (std::move (control_chn))));
+    cubreplication::slave_control_sender *ctrl_sender = new slave_control_sender (
+	    cubreplication::slave_control_channel (std::move (control_chn)));
 
     m_ctrl_sender_daemon = cubthread::get_manager ()->create_daemon_without_entry (cubthread::delta_time (0),
 			   ctrl_sender, ctrl_sender_daemon_name.c_str ());
@@ -284,9 +282,12 @@ namespace cubreplication
     m_transfer_receiver = NULL;
   }
 
-  void slave_node::wait_fetch_completed ()
+  void slave_node::wait_fetch_completed (bool need_wait_disconnect)
   {
-    // this forces transfer_receiver to stream::commit_append all data it has received
+    if (m_transfer_receiver != NULL && need_wait_disconnect)
+      {
+	m_transfer_receiver->wait_disconnect ();
+      }
     destroy_transfer_receiver ();
 
     if (m_lc != NULL)

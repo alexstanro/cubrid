@@ -2743,7 +2743,7 @@ log_append_postpone (THREAD_ENTRY * thread_p, LOG_RCVINDEX rcvindex, LOG_DATA_AD
   LOG_LSA start_lsa = prior_lsa_next_record (thread_p, node, tdes);
   tdes->m_log_postpone_cache.add_lsa (start_lsa);
 
-      // todo - extend to all transactions
+  // todo - extend to all transactions
   if (tdes->topops.last >= 0)
     {
       if (LSA_ISNULL (&tdes->topops.stack[tdes->topops.last].posp_lsa))
@@ -4822,10 +4822,10 @@ log_commit_local (THREAD_ENTRY * thread_p, LOG_TDES * tdes, bool retain_lock, bo
 	{
 	  log_Gl.m_tran_complete_mgr->complete_logging (id_complete);
 	  assert (tdes->state == TRAN_UNACTIVE_COMMITTED_WITH_POSTPONE);
-          if (!tdes->m_log_postpone_cache.do_postpone (*thread_p, tdes->posp_nxlsa))
-            {
-              log_do_postpone(thread_p, tdes, &tdes->posp_nxlsa);
-            }
+	  if (!tdes->m_log_postpone_cache.do_postpone (*thread_p, tdes->posp_nxlsa))
+	    {
+	      log_do_postpone (thread_p, tdes, &tdes->posp_nxlsa);
+	    }
 
 	  /* No need to wait for flush here, since the transaction is committed */
 	  log_append_finish_postpone (thread_p, tdes);
