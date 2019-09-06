@@ -25,8 +25,8 @@
 
 #include "replication_master_node.hpp"
 #include "log_impl.h"
-#include "master_control_channel.hpp"
 #include "log_manager.h"
+#include "master_control_channel.hpp"
 #include "replication_common.hpp"
 #include "server_support.h"
 #include "stream_file.hpp"
@@ -192,4 +192,4 @@ namespace cubreplication
 			      " stream_read_pos:%llu, commit_pos:%llu", m_stream->name ().c_str (),
 			      pos, m_stream->get_curr_read_position (), m_stream->get_last_committed_pos ());
   }
-}
+} /* namespace cubreplication */

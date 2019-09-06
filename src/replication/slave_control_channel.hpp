@@ -30,7 +30,6 @@
 
 #include "communication_channel.hpp"
 #include "cubstream.hpp"
-#include "communication_channel.hpp"
 #include "thread_task.hpp"
 
 namespace cubreplication

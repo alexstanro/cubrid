@@ -23,7 +23,6 @@
 
 #include "boot_sr.h"
 #include "log_manager.h"
-#include "stream_senders_manager.hpp"
 #include "thread_manager.hpp"
 #include "transaction_master_group_complete_manager.hpp"
 #include "replication_master_node.hpp"
@@ -37,7 +36,7 @@ namespace cubtx
   cubthread::daemon *gl_master_gcm_daemon = NULL;
 
   //
-  // get global master instance
+  // master_group_complete_task is class for master group complete daemon
   //
   class master_group_complete_task : public cubthread::entry_task
   {
@@ -113,13 +112,13 @@ namespace cubtx
   }
 
   //
-  // can_close_current_group check whether the current group can be closed.
+  // can_close_current_group checks whether the current group can be closed.
   //
   bool master_group_complete_manager::can_close_current_group ()
   {
     if (!is_latest_closed_group_completed ())
       {
-	/* Can't advance to the next group since the current group was not committed yet. */
+	/* Can't advance to the next group since the current group was not completed yet. */
 	return false;
       }
 
@@ -193,7 +192,7 @@ namespace cubtx
     tx_group &closed_group = get_latest_closed_group ();
 
     /* TODO - consider parameter for MVCC complete here. */
-    /* Add group commit log record and wakeup  log flush daemon. */
+    /* Add group complete log record and wakeup  log flush daemon. */
     log_append_group_complete (thread_p, tdes, m_latest_closed_group_start_stream_position,
 			       closed_group, &closed_group_start_complete_lsa, &closed_group_end_complete_lsa,
 			       &has_postpone);

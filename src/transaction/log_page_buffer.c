@@ -7155,7 +7155,7 @@ loop:
 	}
       else
 	{
-  /* Get the current checkpoint address */
+	  /* Page should be in archive. */
 	  assert (false);
 	}
 
@@ -10294,7 +10294,7 @@ logpb_atomic_resets_tran_complete_manager (log_tran_complete_manager_type manage
       break;
 
     case LOG_TRAN_COMPLETE_MANAGER_MASTER_NODE:
-  /* Wait for all transactions to finish. */
+      /* Wait for all transactions to finish. */
       cubreplication::replication_node_manager::get_master_node ()->set_ctrl_channel_manager_stream_ack (NULL);
 
       /* Close the latest group, if is the case. */
@@ -10444,11 +10444,11 @@ logpb_atomic_resets_tran_complete_manager (log_tran_complete_manager_type manage
  * NOTE:
  */
 void
-logpb_finalize_tran_complete_manager(void)
+logpb_finalize_tran_complete_manager (void)
 {
   /* Finalize complete manager. */
-  er_log_debug(ARG_FILE_LINE, "logpb_finalize_tran_complete_manager \n");
-  logpb_atomic_resets_tran_complete_manager(LOG_TRAN_COMPLETE_NO_MANAGER);
+  er_log_debug (ARG_FILE_LINE, "logpb_finalize_tran_complete_manager \n");
+  logpb_atomic_resets_tran_complete_manager (LOG_TRAN_COMPLETE_NO_MANAGER);
 }
 
 /*

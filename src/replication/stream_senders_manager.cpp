@@ -21,14 +21,14 @@
  * stream_senders_manager.cpp -
  */
 
-#include "log_impl.h"
 #include "stream_senders_manager.hpp"
+
+#include "log_impl.h"
 #include "replication_common.hpp"
+#include "thread_daemon.hpp"
+#include "thread_manager.hpp"
 
 #include <utility>
-#include "log_impl.h"
-#include "thread_manager.hpp"
-#include "thread_daemon.hpp"
 
 /* TODO : I am not sure we will not need some other functionality specific to replication
  * keep this in replication namespace and folder until it is more clear */

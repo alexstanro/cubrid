@@ -267,14 +267,13 @@ namespace cubreplication
     m_lc->fetch_resume ();
 
     return NO_ERROR;
-
   }
 
   void slave_node::disconnect_from_master ()
   {
     er_log_debug_replication (ARG_FILE_LINE, "slave_node::disconnect_from_master");
     stop_and_destroy_online_repl ();
-  } /* namespace cubreplication */
+  }
 
   void slave_node::destroy_transfer_receiver ()
   {

@@ -39,6 +39,7 @@
 #include "thread_entry_task.hpp"
 #include "thread_task.hpp"
 #include "transaction_slave_group_complete_manager.hpp"
+
 #include <unordered_map>
 
 namespace cubreplication

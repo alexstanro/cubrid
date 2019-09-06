@@ -1258,7 +1258,7 @@ log_rv_analysis_group_complete (THREAD_ENTRY * thread_p, int tran_id, LOG_LSA * 
   // *INDENT-OFF*
   // get max between checkpoint's and group_complete's last_ack reads
   log_Gl.hdr.m_ack_stream_position = std::max ((cubstream::stream_position) log_Gl.hdr.m_ack_stream_position,
-					   group_complete.stream_pos);
+					       group_complete.stream_pos);
 
   for (const auto & ti : group)
     {
@@ -1820,7 +1820,7 @@ log_rv_analysis_end_checkpoint (THREAD_ENTRY * thread_p, LOG_LSA * log_lsa, LOG_
   // get max between checkpoint's and group_complete's last_ack reads
   // *INDENT-OFF*
   log_Gl.hdr.m_ack_stream_position = std::max ((cubstream::stream_position) log_Gl.hdr.m_ack_stream_position,
-					   chkpt.last_ack_stream_position);
+					       chkpt.last_ack_stream_position);
   // *INDENT-ON*
 
   /* GET THE CHECKPOINT TRANSACTION INFORMATION */
@@ -2891,7 +2891,6 @@ log_recovery_analysis (THREAD_ENTRY * thread_p, LOG_LSA * start_lsa, LOG_LSA * s
       if ((crt_tdes = LOG_FIND_TDES (i)) != NULL && crt_tdes->trid != NULL_TRANID)
 	{
 	  _er_log_debug (ARG_FILE_LINE, "HA recovery: found active at end of analysis: trid:%d \n", crt_tdes->trid);
-
 	  if (LSA_ISNULL (&log_Gl.m_min_active_lsa) || LSA_LT (&crt_tdes->head_lsa, &log_Gl.m_min_active_lsa))
 	    {
 	      LSA_COPY (&log_Gl.m_min_active_lsa, &crt_tdes->head_lsa);
