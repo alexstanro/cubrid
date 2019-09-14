@@ -1185,7 +1185,7 @@ prior_lsa_gen_group_complete_record (THREAD_ENTRY *thread_p, LOG_PRIOR_NODE *nod
     {
       er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_OUT_OF_VIRTUAL_MEMORY, 1, (size_t) node->data_header_length);
       return ER_OUT_OF_VIRTUAL_MEMORY;
-    }  
+    }
 
   return prior_lsa_copy_redo_data_to_node (node, redo_length, redo_data);
 }
@@ -1369,10 +1369,10 @@ prior_lsa_next_record_internal (THREAD_ENTRY *thread_p, LOG_PRIOR_NODE *node, LO
 	{
 	  assert (vacuum_get_log_blockid (log_Gl.hdr.mvcc_op_log_lsa.pageid)
 		  == vacuum_get_log_blockid (start_lsa.pageid) - 1);
-	  vacuum_produce_log_block_data (thread_p, &log_Gl.hdr.mvcc_op_log_lsa, log_Gl.hdr.last_block_oldest_mvccid,
-					 log_Gl.hdr.last_block_newest_mvccid);
-	  log_Gl.hdr.last_block_oldest_mvccid = vacuum_get_global_oldest_active_mvccid ();
-	  log_Gl.hdr.last_block_newest_mvccid = MVCCID_NULL;
+	  vacuum_produce_log_block_data (thread_p, &log_Gl.hdr.mvcc_op_log_lsa, log_Gl.hdr.oldest_visible_mvccid,
+					 log_Gl.hdr.newest_block_mvccid);
+	  log_Gl.hdr.oldest_visible_mvccid = vacuum_get_global_oldest_visible_mvccid ();
+	  log_Gl.hdr.newest_block_mvccid = MVCCID_NULL;
 	  log_Gl.hdr.does_block_need_vacuum = false;
 	}
     }
@@ -1419,17 +1419,17 @@ prior_lsa_next_record_internal (THREAD_ENTRY *thread_p, LOG_PRIOR_NODE *node, LO
 		     LSA_AS_ARGS (&node->start_lsa), LSA_AS_ARGS (&log_Gl.hdr.mvcc_op_log_lsa));
 
       /* Same block, update the oldest and the newest met MVCCID's */
-      if (log_Gl.hdr.last_block_newest_mvccid == MVCCID_NULL
-	  || MVCC_ID_PRECEDES (log_Gl.hdr.last_block_newest_mvccid, mvccid))
+      if (log_Gl.hdr.newest_block_mvccid == MVCCID_NULL
+	  || MVCC_ID_PRECEDES (log_Gl.hdr.newest_block_mvccid, mvccid))
 	{
 	  /* A newer MVCCID was found */
-	  log_Gl.hdr.last_block_newest_mvccid = mvccid;
+	  log_Gl.hdr.newest_block_mvccid = mvccid;
 	}
-      if (log_Gl.hdr.last_block_oldest_mvccid == MVCCID_NULL)
+      if (log_Gl.hdr.oldest_visible_mvccid == MVCCID_NULL)
 	{
-	  log_Gl.hdr.last_block_oldest_mvccid = vacuum_get_global_oldest_active_mvccid ();
+	  log_Gl.hdr.oldest_visible_mvccid = vacuum_get_global_oldest_visible_mvccid ();
 	}
-      assert (!MVCC_ID_PRECEDES (mvccid, log_Gl.hdr.last_block_oldest_mvccid));
+      assert (!MVCC_ID_PRECEDES (mvccid, log_Gl.hdr.oldest_visible_mvccid));
 
       /* Replace last MVCC deleted/updated log record */
       LSA_COPY (&log_Gl.hdr.mvcc_op_log_lsa, &start_lsa);
