@@ -170,6 +170,8 @@ mvcctable::mvcctable ()
   , m_trans_status_history (NULL)
   , m_new_mvccid_lock ()
   , m_active_trans_mutex ()
+  , m_oldest_visible (MVCCID_NULL)
+  , m_ov_lock_count (0)
 {
 }
 
@@ -355,6 +357,10 @@ mvcctable::build_mvcc_info (log_tdes &tdes)
 MVCCID
 mvcctable::compute_oldest_visible_mvccid () const
 {
+  perf_utime_tracker perf;
+  cubthread::entry &threadr = cubthread::get_entry ();
+  PERF_UTIME_TRACKER_START (&threadr, &perf);
+
   const size_t MVCC_OLDEST_ACTIVE_BUFFER_LENGTH = 32;
   cubmem::appendable_array<size_t, MVCC_OLDEST_ACTIVE_BUFFER_LENGTH> waiting_mvccids_pos;
   MVCCID loaded_tran_mvccid;
@@ -400,6 +406,15 @@ mvcctable::compute_oldest_visible_mvccid () const
 	    }
 	  // remove from waiting array
 	  waiting_mvccids_pos.erase (i);
+	}
+    }
+
+  if (perf.is_perf_tracking)
+    {
+      PERF_UTIME_TRACKER_TIME (&threadr, &perf, PSTAT_LOG_OLDEST_MVCC_TIME_COUNTERS);
+      if (retry_count > 0)
+	{
+	  perfmon_add_stat (&cubthread::get_entry (), PSTAT_LOG_OLDEST_MVCC_RETRY_COUNTERS, retry_count);
 	}
     }
 
@@ -624,4 +639,44 @@ mvcctable::reset_start_mvccid ()
   m_trans_status_history[m_trans_status_history_position].m_active_mvccs.reset_start_mvccid (log_Gl.hdr.mvcc_next_id);
 
   m_current_status_lowest_active_mvccid.store (log_Gl.hdr.mvcc_next_id);
+}
+
+MVCCID
+mvcctable::get_global_oldest_visible () const
+{
+  return m_oldest_visible.load ();
+}
+
+MVCCID
+mvcctable::update_global_oldest_visible ()
+{
+  if (m_ov_lock_count == 0)
+    {
+      MVCCID oldest_visible = compute_oldest_visible_mvccid ();
+      if (m_ov_lock_count == 0)
+	{
+	  assert (m_oldest_visible.load () <= oldest_visible);
+	  m_oldest_visible.store (oldest_visible);
+	}
+    }
+  return m_oldest_visible.load ();
+}
+
+void
+mvcctable::lock_global_oldest_visible ()
+{
+  ++m_ov_lock_count;
+}
+
+void
+mvcctable::unlock_global_oldest_visible ()
+{
+  assert (m_ov_lock_count > 0);
+  --m_ov_lock_count;
+}
+
+bool
+mvcctable::is_global_oldest_visible_locked () const
+{
+  return m_ov_lock_count != 0;
 }
