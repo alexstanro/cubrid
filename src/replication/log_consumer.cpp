@@ -42,297 +42,316 @@
 
 namespace cubreplication
 {
-  class applier_worker_task : public cubthread::entry_task
+  class applier_worker_task:public cubthread::entry_task
   {
-    public:
-      applier_worker_task (stream_entry *repl_stream_entry, log_consumer &lc)
-	: m_lc (lc)
-      {
-	add_repl_stream_entry (repl_stream_entry);
-      }
+  public:
+    applier_worker_task (stream_entry * repl_stream_entry, log_consumer & lc):m_lc (lc)
+    {
+      add_repl_stream_entry (repl_stream_entry);
+    }
 
-      ~applier_worker_task ()
-      {
-	for (stream_entry *&se : m_repl_stream_entries)
-	  {
-	    delete se;
+     ~applier_worker_task ()
+    {
+    for (stream_entry * &se:m_repl_stream_entries)
+	{
+	  delete se;
 	    se = NULL;
-	  }
-      }
+	}
+    }
 
-      void execute (cubthread::entry &thread_ref) final
-      {
-	(void) locator_repl_start_tran (&thread_ref);
+    void execute (cubthread::entry & thread_ref) final
+    {
+      (void) locator_repl_start_tran (&thread_ref);
 
-	for (stream_entry *&curr_stream_entry : m_repl_stream_entries)
-	  {
-	    curr_stream_entry->unpack ();
+      for (stream_entry * &curr_stream_entry:m_repl_stream_entries)
+	{
+	  curr_stream_entry->unpack ();
 
-	    if (prm_get_bool_value (PRM_ID_DEBUG_REPLICATION_DATA))
-	      {
-		string_buffer sb;
-		curr_stream_entry->stringify (sb, stream_entry::detailed_dump);
-		_er_log_debug (ARG_FILE_LINE, "applier_worker_task execute:\n%s", sb.get_buffer ());
-	      }
+	  if (prm_get_bool_value (PRM_ID_DEBUG_REPLICATION_DATA))
+	    {
+	      string_buffer sb;
+	      curr_stream_entry->stringify (sb, stream_entry::detailed_dump);
+	      _er_log_debug (ARG_FILE_LINE, "applier_worker_task execute:\n%s", sb.get_buffer ());
+	    }
 
-	    for (int i = 0; i < curr_stream_entry->get_packable_entry_count_from_header (); i++)
-	      {
-		replication_object *obj = curr_stream_entry->get_object_at (i);
+	  for (int i = 0; i < curr_stream_entry->get_packable_entry_count_from_header (); i++)
+	    {
+	      replication_object *obj = curr_stream_entry->get_object_at (i);
 
-		/* clean error code */
-		er_clear ();
+	      /* clean error code */
+	      er_clear ();
 
-		int err = obj->apply ();
-		if (err != NO_ERROR)
-		  {
-		    /* TODO[replication] : error handling */
-		  }
-	      }
+	      int err = obj->apply ();
+	      if (err != NO_ERROR)
+		{
+		  /* TODO[replication] : error handling */
+		}
+	    }
 
-	    delete curr_stream_entry;
-	    curr_stream_entry = NULL;
-	  }
+	  delete curr_stream_entry;
+	  curr_stream_entry = NULL;
+	}
 
-	m_repl_stream_entries.clear ();
+      m_repl_stream_entries.clear ();
 
-	(void) locator_repl_end_tran (&thread_ref, true);
-	m_lc.end_one_task ();
-      }
+      (void) locator_repl_end_tran (&thread_ref, true);
+      m_lc.end_one_task ();
+    }
 
-      void add_repl_stream_entry (stream_entry *repl_stream_entry)
-      {
-	m_repl_stream_entries.push_back (repl_stream_entry);
-      }
+    void add_repl_stream_entry (stream_entry * repl_stream_entry)
+    {
+      m_repl_stream_entries.push_back (repl_stream_entry);
+    }
 
-      bool has_commit (void)
-      {
-	assert (get_entries_cnt () > 0);
-	stream_entry *se = m_repl_stream_entries.back ();
+    bool has_commit (void)
+    {
+      assert (get_entries_cnt () > 0);
+      stream_entry *se = m_repl_stream_entries.back ();
 
-	return se->is_tran_commit ();
-      }
+      return se->is_tran_commit ();
+    }
 
-      bool has_abort (void)
-      {
-	assert (get_entries_cnt () > 0);
-	stream_entry *se = m_repl_stream_entries.back ();
+    bool has_abort (void)
+    {
+      assert (get_entries_cnt () > 0);
+      stream_entry *se = m_repl_stream_entries.back ();
 
-	return se->is_tran_abort ();
-      }
+      return se->is_tran_abort ();
+    }
 
-      size_t get_entries_cnt (void)
-      {
-	return m_repl_stream_entries.size ();
-      }
+    size_t get_entries_cnt (void)
+    {
+      return m_repl_stream_entries.size ();
+    }
 
-      void stringify (string_buffer &sb)
-      {
-	sb ("apply_task: stream_entries:%d\n", get_entries_cnt ());
-	for (auto it = m_repl_stream_entries.begin (); it != m_repl_stream_entries.end (); it++)
-	  {
-	    (*it)->stringify (sb, stream_entry::detailed_dump);
-	  }
-      }
+    void stringify (string_buffer & sb)
+    {
+      sb ("apply_task: stream_entries:%d\n", get_entries_cnt ());
+      for (auto it = m_repl_stream_entries.begin (); it != m_repl_stream_entries.end (); it++)
+	{
+	  (*it)->stringify (sb, stream_entry::detailed_dump);
+	}
+    }
 
-    private:
-      std::vector<stream_entry *> m_repl_stream_entries;
-      log_consumer &m_lc;
+  private:
+    std::vector < stream_entry * >m_repl_stream_entries;
+    log_consumer & m_lc;
   };
 
-  class dispatch_daemon_task : public cubthread::entry_task
+  class dispatch_daemon_task:public cubthread::entry_task
   {
-    public:
-      dispatch_daemon_task (log_consumer &lc)
-	: m_filtered_apply_end (log_Gl.hdr.m_ack_stream_position)
-	, m_entry_fetcher (*lc.get_stream ())
-	, m_lc (lc)
-	, m_stop (false)
-      {
-      }
+  public:
+    dispatch_daemon_task (log_consumer & lc):m_filtered_apply_end (log_Gl.hdr.m_ack_stream_position),
+      m_entry_fetcher (*lc.get_stream ()), m_lc (lc), m_stop (false)
+    {
+    }
 
-      void execute (cubthread::entry &thread_ref) override
-      {
-	using tasks_map = std::unordered_map <MVCCID, applier_worker_task *>;
-	tasks_map repl_tasks;
-	tasks_map nonexecutable_repl_tasks;
+    void execute (cubthread::entry & thread_ref) override
+    {
+      m_lc.wait_for_fetch_resume ();
 
-	m_lc.wait_for_fetch_resume ();
+      while (!m_stop)
+	{
+	  stream_entry *se = NULL;
+	  int err = m_entry_fetcher.fetch_entry (se);
+	  if (err != NO_ERROR)
+	    {
+	      if (err != ER_STREAM_NO_MORE_DATA)
+		{
+		  // should not happen
+		  assert (false);
+		}
 
-	while (!m_stop)
-	  {
-	    stream_entry *se = NULL;
-	    int err = m_entry_fetcher.fetch_entry (se);
-	    if (err != NO_ERROR)
-	      {
-		if (err == ER_STREAM_NO_MORE_DATA)
-		  {
-		    ASSERT_ERROR ();
-		    m_stop = true;
-		    delete se;
-		    break;
-		  }
-		else
-		  {
-		    ASSERT_ERROR ();
-		    // should not happen
-		    assert (false);
-		    m_stop = true;
-		    delete se;
-		    break;
-		  }
-	      }
+	      ASSERT_ERROR ();
+	      m_stop = true;
+	      delete se;
+	      break;
+	    }
 
-	    if (filter_out_stream_entry (se))
-	      {
-		delete se;
-		continue;
-	      }
+	  if (filter_out_stream_entry (se))
+	    {
+	      delete se;
+	      continue;
+	    }
 
-	    if (se->is_tran_state_end_of_stream ())
-	      {
-		m_stop = true;
-		delete se;
-		break;
-	      }
+	  if (se->is_tran_state_end_of_stream ())
+	    {
+	      m_stop = true;
+	      delete se;
+	      break;
+	    }
 
-	    if (se->is_group_commit ())
-	      {
-		se->unpack ();
-		assert (se->get_stream_entry_end_position () > se->get_stream_entry_start_position ());
-		m_lc.ack_produce (se->get_stream_entry_end_position ());
-	      }
+	  if (se->is_group_commit ())
+	    {
+	      se->unpack ();
+	      assert (se->get_stream_entry_end_position () > se->get_stream_entry_start_position ());
+	      m_lc.ack_produce (se->get_stream_entry_end_position ());
+	    }
 
-	    if (prm_get_bool_value (PRM_ID_DEBUG_REPLICATION_DATA))
-	      {
-		string_buffer sb;
-		se->stringify (sb, stream_entry::short_dump);
-		_er_log_debug (ARG_FILE_LINE, "dispatch_daemon_task execute pop_entry:\n%s", sb.get_buffer ());
-	      }
+	  if (prm_get_bool_value (PRM_ID_DEBUG_REPLICATION_DATA))
+	    {
+	      string_buffer sb;
+	      se->stringify (sb, stream_entry::short_dump);
+	      _er_log_debug (ARG_FILE_LINE, "dispatch_daemon_task execute pop_entry:\n%s", sb.get_buffer ());
+	    }
 
-	    /* TODO[replication] : on-the-fly applier & multi-threaded applier */
-	    if (se->is_group_commit ())
-	      {
-		assert (se->get_data_packed_size () == 0);
+	  /* TODO[replication] : on-the-fly applier & multi-threaded applier */
+	  if (se->is_group_commit ())
+	    {
+	      assert (se->get_data_packed_size () == 0);
 
-		/* wait for all started tasks to finish */
-		er_log_debug_replication (ARG_FILE_LINE, "dispatch_daemon_task wait for all working tasks to finish\n");
-		assert (se->get_stream_entry_start_position () < se->get_stream_entry_end_position ());
+	      /* wait for all started tasks to finish */
+	      er_log_debug_replication (ARG_FILE_LINE, "dispatch_daemon_task wait for all working tasks to finish\n");
+	      assert (se->get_stream_entry_start_position () < se->get_stream_entry_end_position ());
 
-		m_lc.wait_for_tasks ();
+	      /* Wait for ending current group. We can't mix transactions belonging to different groups, since 
+	       * it may not be independent. Only inside of a group we guarantee transactions independency.
+	       */
+	      wait_for_ending_previous_group_tasks ();
 
-		// apply all sub-transaction first
-		m_lc.get_subtran_applier ().apply ();
+	      apply_and_reset_current_group_tasks ();
 
-		for (tasks_map::iterator it = repl_tasks.begin (); it != repl_tasks.end (); it++)
-		  {
-		    /* check last stream entry of task */
-		    applier_worker_task *my_repl_applier_worker_task = it->second;
-		    if (my_repl_applier_worker_task->has_commit ())
-		      {
-			m_lc.execute_task (it->second);
-		      }
-		    else if (my_repl_applier_worker_task->has_abort ())
-		      {
-			/* TODO[replication] : when on-fly apply is active, we need to abort the transaction;
-			 * for now, we are sure that no change has been made on slave on behalf of this task,
-			 * just drop the task */
-			delete it->second;
-			it->second = NULL;
-		      }
-		    else
-		      {
-			/* tasks without commit or abort are postponed to next group commit */
-			assert (it->second->get_entries_cnt () > 0);
-			nonexecutable_repl_tasks.insert (std::make_pair (it->first, it->second));
-		      }
-		  }
-		repl_tasks.clear ();
-		if (nonexecutable_repl_tasks.size () > 0)
-		  {
-		    repl_tasks = nonexecutable_repl_tasks;
-		    nonexecutable_repl_tasks.clear ();
-		  }
+	      /* delete the group commit stream entry */
+	      delete se;
+	    }
+	  else if (se->is_new_master ())
+	    {
+	      delete_current_group_tasks ();
+	      current_group_repl_tasks.clear ();
+	    }
+	  else if (!add_task_to_current_group_tasks (se))
+	    {
+	      /* TODO - Update when new group commit will be activated. */
+	    }
+	}
 
-		/* delete the group commit stream entry */
-		assert (se->is_group_commit ());
-		delete se;
-	      }
-	    else if (se->is_new_master ())
-	      {
-		for (auto &repl_task : repl_tasks)
-		  {
-		    delete repl_task.second;
-		    repl_task.second = NULL;
-		  }
-		repl_tasks.clear ();
-	      }
-	    else if (se->is_subtran_commit ())
-	      {
-		m_lc.get_subtran_applier ().insert_stream_entry (se);
-	      }
-	    else
-	      {
-		MVCCID mvccid = se->get_mvccid ();
-		auto it = repl_tasks.find (mvccid);
+      // delete unapplied tasks
+      delete_current_group_tasks ();
 
-		if (it != repl_tasks.end ())
-		  {
-		    /* already a task with same MVCCID, add it to existing task */
-		    applier_worker_task *my_repl_applier_worker_task = it->second;
-		    my_repl_applier_worker_task->add_repl_stream_entry (se);
+      // wait for the applying tasks
+      wait_for_ending_previous_group_tasks ();
+      m_lc.set_dispatcher_finished ();
+    }
 
-		    assert (my_repl_applier_worker_task->get_entries_cnt () > 0);
-		  }
-		else
-		  {
-		    applier_worker_task *my_repl_applier_worker_task = new applier_worker_task (se, m_lc);
-		    repl_tasks.insert (std::make_pair (mvccid, my_repl_applier_worker_task));
+  private:
 
-		    assert (my_repl_applier_worker_task->get_entries_cnt () > 0);
-		  }
+    bool is_filtered_apply_segment (cubstream::stream_position stream_entry_end) const
+    {
+      return stream_entry_end <= m_filtered_apply_end;
+    }
 
-		/* stream entry is deleted by applier task thread */
-	      }
-	  }
-
-	// delete unapplied tasks
-	for (auto &repl_task : repl_tasks)
-	  {
-	    delete repl_task.second;
-	    repl_task.second = NULL;
-	  }
-	// wait for the applying tasks
-	m_lc.wait_for_tasks ();
-	m_lc.set_dispatcher_finished ();
-      }
-
-    private:
-
-      bool is_filtered_apply_segment (cubstream::stream_position stream_entry_end) const
-      {
-	return stream_entry_end <= m_filtered_apply_end;
-      }
-
-      bool filter_out_stream_entry (stream_entry *repl_stream_entry) const
-      {
-	if (is_filtered_apply_segment (repl_stream_entry->get_stream_entry_end_position ()))
-	  {
-	    MVCCID mvccid = repl_stream_entry->get_mvccid ();
+    bool filter_out_stream_entry (stream_entry * repl_stream_entry) const
+    {
+      if (is_filtered_apply_segment (repl_stream_entry->get_stream_entry_end_position ()))
+	{
+	  MVCCID mvccid = repl_stream_entry->get_mvccid ();
 	    return repl_stream_entry->is_group_commit ()
-		   || log_Gl.m_repl_rv.m_active_mvcc_ids.find (mvccid) == log_Gl.m_repl_rv.m_active_mvcc_ids.end ();
-	  }
+	    || log_Gl.m_repl_rv.m_active_mvcc_ids.find (mvccid) == log_Gl.m_repl_rv.m_active_mvcc_ids.end ();
+	}
 
-	if (!log_Gl.m_repl_rv.m_active_mvcc_ids.empty ())
-	  {
-	    log_Gl.m_repl_rv.m_active_mvcc_ids.clear ();
-	  }
-	return false;
-      }
+      if (!log_Gl.m_repl_rv.m_active_mvcc_ids.empty ())
+	{
+	  log_Gl.m_repl_rv.m_active_mvcc_ids.clear ();
+	}
+      return false;
+    }
 
-      cubstream::stream_position m_filtered_apply_end;
-      stream_entry_fetcher m_entry_fetcher;
-      log_consumer &m_lc;
-      bool m_stop;
+    void wait_for_ending_previous_group_tasks ()
+    {
+      /* TODO - this method must be updated when new group commit will be activated. */
+      m_lc.wait_for_tasks ();
+    }
+
+    void apply_and_reset_current_group_tasks ()
+    {
+      /* TODO - this method must be updated when new group commit will be activated. */
+
+      // apply all sub-transaction first
+      m_lc.get_subtran_applier ().apply ();
+
+      for (tasks_map::iterator it = current_group_repl_tasks.begin (); it != current_group_repl_tasks.end (); it++)
+	{
+	  /* check last stream entry of task */
+	  applier_worker_task *my_repl_applier_worker_task = it->second;
+	  if (my_repl_applier_worker_task->has_commit ())
+	    {
+	      m_lc.execute_task (it->second);
+	    }
+	  else if (my_repl_applier_worker_task->has_abort ())
+	    {
+	      /* TODO[replication] : when on-fly apply is active, we need to abort the transaction;
+	       * for now, we are sure that no change has been made on slave on behalf of this task,
+	       * just drop the task */
+	      delete it->second;
+	      it->second = NULL;
+	    }
+	  else
+	    {
+	      /* tasks without commit or abort are postponed to next group commit */
+	      assert (it->second->get_entries_cnt () > 0);
+	      current_group_nonexecutable_repl_tasks.insert (std::make_pair (it->first, it->second));
+	    }
+	}
+
+      current_group_repl_tasks.clear ();
+      if (current_group_nonexecutable_repl_tasks.size () > 0)
+	{
+	  current_group_repl_tasks = current_group_nonexecutable_repl_tasks;
+	  current_group_nonexecutable_repl_tasks.clear ();
+	}
+    }
+
+    bool add_task_to_current_group_tasks (stream_entry * se)
+    {
+      /* TODO - this method must be updated when new group commit will be activated. */
+
+      if (se->is_subtran_commit ())
+	{
+	  m_lc.get_subtran_applier ().insert_stream_entry (se);
+	  return true;
+	}
+
+      MVCCID mvccid = se->get_mvccid ();
+      auto it = current_group_repl_tasks.find (mvccid);
+
+      if (it != current_group_repl_tasks.end ())
+	{
+	  /* already a task with same MVCCID, add it to existing task */
+	  applier_worker_task *my_repl_applier_worker_task = it->second;
+	  my_repl_applier_worker_task->add_repl_stream_entry (se);
+
+	  assert (my_repl_applier_worker_task->get_entries_cnt () > 0);
+	}
+      else
+	{
+	  applier_worker_task *my_repl_applier_worker_task = new applier_worker_task (se, m_lc);
+	  current_group_repl_tasks.insert (std::make_pair (mvccid, my_repl_applier_worker_task));
+
+	  assert (my_repl_applier_worker_task->get_entries_cnt () > 0);
+	}
+
+      /* stream entry is deleted by applier task thread */
+      return true;
+    }
+
+    void delete_current_group_tasks ()
+    {
+      /* Delete unapplied task */
+    for (auto & repl_task:current_group_repl_tasks)
+	{
+	  delete repl_task.second;
+	  repl_task.second = NULL;
+	}
+    }
+
+    using tasks_map = std::unordered_map < MVCCID, applier_worker_task * >;
+    tasks_map current_group_repl_tasks;
+    tasks_map current_group_nonexecutable_repl_tasks;
+
+    cubstream::stream_position m_filtered_apply_end;
+    stream_entry_fetcher m_entry_fetcher;
+    log_consumer & m_lc;
+    bool m_stop;
   };
 
   log_consumer::~log_consumer ()
@@ -345,7 +364,7 @@ namespace cubreplication
 	cubthread::get_manager ()->destroy_worker_pool (m_applier_workers_pool);
       }
 
-    delete m_subtran_applier; // must be deleted after worker pool
+    delete m_subtran_applier;	// must be deleted after worker pool
 
     get_stream ()->start ();
   }
@@ -355,24 +374,23 @@ namespace cubreplication
     m_subtran_applier = new subtran_applier (*this);
 
     m_dispatch_daemon = cubthread::get_manager ()->create_daemon (cubthread::delta_time (0),
-			new dispatch_daemon_task (*this),
-			"apply_stream_entry_daemon");
+								  new dispatch_daemon_task (*this),
+								  "apply_stream_entry_daemon");
 
     m_applier_workers_pool = cubthread::get_manager ()->create_worker_pool (m_applier_worker_threads_count,
-			     m_applier_worker_threads_count,
-			     "replication_apply_workers",
-			     NULL, 1, 1);
+									    m_applier_worker_threads_count,
+									    "replication_apply_workers", NULL, 1, 1);
 
     m_use_daemons = true;
   }
 
   void log_consumer::wait_dispatcher_applied_all ()
   {
-    std::unique_lock<std::mutex> ul (m_dispatch_finished_mtx);
-    m_dispatch_finished_cv.wait (ul, [this] ()
-    {
-      return m_dispatch_finished;
-    });
+    std::unique_lock < std::mutex > ul (m_dispatch_finished_mtx);
+    m_dispatch_finished_cv.wait (ul,[this] ()
+				 {
+				 return m_dispatch_finished;}
+    );
   }
 
   void log_consumer::set_dispatcher_finished ()
@@ -381,14 +399,14 @@ namespace cubreplication
     m_dispatch_finished_cv.notify_one ();
   }
 
-  void log_consumer::push_task (cubthread::entry_task *task)
+  void log_consumer::push_task (cubthread::entry_task * task)
   {
     cubthread::get_manager ()->push_task (m_applier_workers_pool, task);
 
     m_started_tasks++;
   }
 
-  void log_consumer::execute_task (applier_worker_task *task)
+  void log_consumer::execute_task (applier_worker_task * task)
   {
     if (prm_get_bool_value (PRM_ID_DEBUG_REPLICATION_DATA))
       {
@@ -402,10 +420,13 @@ namespace cubreplication
 
   void log_consumer::wait_for_tasks (void)
   {
-    while (m_started_tasks > 0)
+    if (m_started_tasks == 0)
       {
-	thread_sleep (1);
+	return;
       }
+
+    std::unique_lock < std::mutex > ulock (m_join_task_mutex);
+    m_join_task_cv.wait (ulock, [this] {return m_started_tasks == 0;});
   }
 
   void log_consumer::stop (void)
@@ -431,9 +452,9 @@ namespace cubreplication
     m_fetch_suspend.wait ();
   }
 
-  subtran_applier &log_consumer::get_subtran_applier ()
+  subtran_applier & log_consumer::get_subtran_applier ()
   {
     return *m_subtran_applier;
   }
 
-} /* namespace cubreplication */
+}				/* namespace cubreplication */

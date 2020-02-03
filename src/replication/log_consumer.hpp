@@ -52,7 +52,7 @@ namespace cubreplication
   class applier_worker_task;
   class stream_entry;
   class subtran_applier;
-  using stream_entry_fetcher = cubstream::entry_fetcher<stream_entry>;
+  using stream_entry_fetcher = cubstream::entry_fetcher < stream_entry >;
 
   /*
    * log_consumer : class intended as singleton for slave server
@@ -73,95 +73,99 @@ namespace cubreplication
    */
   class log_consumer
   {
-    private:
-      cubstream::multi_thread_stream *m_stream;
+  private:
+    cubstream::multi_thread_stream * m_stream;
 
-      cubthread::daemon *m_dispatch_daemon;
+    cubthread::daemon * m_dispatch_daemon;
 
-      cubthread::entry_workpool *m_applier_workers_pool;
-      int m_applier_worker_threads_count;
+    cubthread::entry_workpool * m_applier_workers_pool;
+    int m_applier_worker_threads_count;
 
-      cubreplication::subtran_applier *m_subtran_applier;
+      cubreplication::subtran_applier * m_subtran_applier;
 
-      bool m_use_daemons;
+    bool m_use_daemons;
 
-      std::atomic<int> m_started_tasks;
+      std::atomic < int >m_started_tasks;
 
-      /* fetch suspend flag : this is required in context of replication with copy phase :
-       * while replication copy is running the fetch from online replication must be suspended
-       * (although the stream contents are received and stored on local slave node)
-       */
+      std::mutex m_join_task_mutex;
+      std::condition_variable m_join_task_cv;
+
+    /* fetch suspend flag : this is required in context of replication with copy phase :
+     * while replication copy is running the fetch from online replication must be suspended
+     * (although the stream contents are received and stored on local slave node)
+     */
       cubsync::event_semaphore m_fetch_suspend;
 
-      bool m_dispatch_finished;
+    bool m_dispatch_finished;
       std::condition_variable m_dispatch_finished_cv;
       std::mutex m_dispatch_finished_mtx;
 
-    public:
+  public:
 
-      std::function<void (cubstream::stream_position)> ack_produce;
+      std::function < void (cubstream::stream_position) > ack_produce;
 
-      log_consumer ()
-	: m_stream (NULL)
-	, m_dispatch_daemon (NULL)
-	, m_applier_workers_pool (NULL)
-	, m_applier_worker_threads_count (100)
-	, m_subtran_applier (NULL)
-	, m_use_daemons (false)
-	, m_started_tasks (0)
-	, m_dispatch_finished (false)
-	, ack_produce ([] (cubstream::stream_position)
-      {
-	assert (false);
-      })
-      {
-	fetch_suspend ();
-      };
+      log_consumer ():m_stream (NULL), m_dispatch_daemon (NULL), m_applier_workers_pool (NULL),
+      m_applier_worker_threads_count (100), m_subtran_applier (NULL), m_use_daemons (false), m_started_tasks (0),
+      m_dispatch_finished (false), ack_produce ([](cubstream::stream_position)
+						{
+						assert (false);})
+    {
+      fetch_suspend ();
+    };
 
-      ~log_consumer ();
+    ~log_consumer ();
 
-      void start_daemons (void);
+    void start_daemons (void);
 
-      void wait_dispatcher_applied_all ();
-      void set_dispatcher_finished ();
-      void execute_task (applier_worker_task *task);
-      void push_task (cubthread::entry_task *task);
+    void wait_dispatcher_applied_all ();
+    void set_dispatcher_finished ();
+    void execute_task (applier_worker_task * task);
+    void push_task (cubthread::entry_task * task);
 
-      void set_stream (cubstream::multi_thread_stream *stream)
-      {
-	m_stream = stream;
-      }
+    void set_stream (cubstream::multi_thread_stream * stream)
+    {
+      m_stream = stream;
+    }
 
-      cubstream::multi_thread_stream *get_stream (void)
-      {
-	return m_stream;
-      }
+    cubstream::multi_thread_stream * get_stream (void)
+    {
+      return m_stream;
+    }
 
-      void end_one_task (void)
-      {
-	m_started_tasks--;
-      }
+    void end_one_task (void)
+    {
+      int started_tasks;
 
-      void set_ack_producer (const std::function<void (cubstream::stream_position)> &ack_producer)
-      {
-	ack_produce = ack_producer;
-      }
+      started_tasks = --m_started_tasks;
 
-      int get_started_task (void)
-      {
-	return m_started_tasks;
-      }
+      assert (started_tasks >= 0);
+      if (started_tasks == 0)
+	{
+	  std::unique_lock < std::mutex > ulock (m_join_task_mutex);
+	  m_join_task_cv.notify_all ();
+	}
+    }
 
-      void wait_for_tasks (void);
+    void set_ack_producer (const std::function < void (cubstream::stream_position) > &ack_producer)
+    {
+      ack_produce = ack_producer;
+    }
 
-      void stop (void);
+    int get_started_task (void)
+    {
+      return m_started_tasks;
+    }
 
-      void fetch_suspend ();
-      void fetch_resume ();
-      void wait_for_fetch_resume ();
+    void wait_for_tasks (void);
 
-      subtran_applier &get_subtran_applier ();
+    void stop (void);
+
+    void fetch_suspend ();
+    void fetch_resume ();
+    void wait_for_fetch_resume ();
+
+    subtran_applier & get_subtran_applier ();
   };
-} /* namespace cubreplication */
+}				/* namespace cubreplication */
 
 #endif /* _LOG_CONSUMER_HPP_ */
