@@ -1575,6 +1575,8 @@ logtb_clear_tdes (THREAD_ENTRY * thread_p, LOG_TDES * tdes)
     {
       tdes->get_replication_generator ().clear_transaction ();
     }
+
+  tdes->id_complete = cubtx::complete_manager::NULL_ID;
 }
 
 /*
@@ -4102,6 +4104,37 @@ logtb_complete_mvcc (THREAD_ENTRY * thread_p, LOG_TDES * tdes, bool committed)
 	}
     }
 }
+
+/*
+* logtb_reset_mvcc_and_related_states () - Reset MVCC and related states
+*
+* return	  : Void.
+* thread_p (in)  : Thread entry.
+* tdes (in)	  : Transaction descriptor.
+*
+*  Note : This function reset MVCC and clear related states - update stats and count optimization.
+*      Clearing update stats and count optimization may be moved outside.
+*/
+void
+logtb_reset_mvcc_and_related_states (THREAD_ENTRY * thread_p, LOG_TDES * tdes)
+{
+  mvcctable *mvcc_table = &log_Gl.mvcc_table;
+  MVCC_SNAPSHOT *p_mvcc_snapshot = NULL;
+  MVCC_INFO *curr_mvcc_info = &tdes->mvccinfo;
+
+  curr_mvcc_info->recent_snapshot_lowest_active_mvccid = MVCCID_NULL;
+
+  p_mvcc_snapshot = &(curr_mvcc_info->snapshot);
+  if (p_mvcc_snapshot->valid)
+    {
+      logtb_tran_reset_count_optim_state (thread_p);
+    }
+
+  curr_mvcc_info->reset ();
+
+  logtb_tran_clear_update_stats (&tdes->log_upd_stats);
+}
+
 
 /*
  * logtb_set_loose_end_tdes -
