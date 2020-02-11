@@ -4790,6 +4790,8 @@ log_commit_local (THREAD_ENTRY * thread_p, LOG_TDES * tdes, bool retain_lock, bo
    * statistics for all B-trees and if an error occurs those operations and all operations of current transaction must
    * be rolled back. */
 
+  /* DO TEST */
+   
   /* TODO - remove complete MVCC. The GC thread will complete MVCC. */
   logtb_complete_mvcc (thread_p, tdes, true);
 
