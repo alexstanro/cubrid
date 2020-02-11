@@ -10381,7 +10381,6 @@ static void
 log_update_global_unique_statistics (THREAD_ENTRY * thread_p, LOG_TDES * tdes)
 {
   assert (tdes != NULL);
-  assert (tdes->state == TRAN_UNACTIVE_WILL_COMMIT);
 
   if (tdes->log_upd_stats.unique_stats_hash->nentries == 0)
     {
