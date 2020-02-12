@@ -4532,20 +4532,20 @@ log_append_group_complete_internal (THREAD_ENTRY * thread_p, LOG_TDES * tdes, cu
   if (local_has_postpone)
     {
       // *INDENT-OFF*
-      for (tx_group::node_info &ti : group.get_container())
-      {
-	LOG_TDES *tdes = LOG_FIND_TDES(ti.m_tran_index);
-	assert(tdes != NULL);
-	if (LSA_ISNULL(&tdes->posp_nxlsa))
+      for (tx_group::node_info &ti : group.get_container ())
 	{
-	  // filter out transactions without postpone
-	  continue;
-	}
+	  LOG_TDES *tdes = LOG_FIND_TDES (ti.m_tran_index);
+	  assert (tdes != NULL);
+	  if (LSA_ISNULL (&tdes->posp_nxlsa))
+	    {
+	      // filter out transactions without postpone
+	      continue;
+	    }
 
-	assert(ti.m_tran_state == TRAN_UNACTIVE_COMMITTED_WITH_POSTPONE);
-	tdes->state = TRAN_UNACTIVE_COMMITTED_WITH_POSTPONE;
-	tdes->rcv.tran_start_postpone_lsa = lsa;
-      }
+	  assert (ti.m_tran_state == TRAN_UNACTIVE_COMMITTED_WITH_POSTPONE);
+	  tdes->state = TRAN_UNACTIVE_COMMITTED_WITH_POSTPONE;
+	  tdes->rcv.tran_start_postpone_lsa = lsa;
+	}
       // *INDENT-ON*
     }
 
